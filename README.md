@@ -64,7 +64,8 @@ Yamato-no-Mikoto/
 | ファイル | 内容 |
 |---------|------|
 | [docs/architecture.md](docs/architecture.md) | 設計の全体像（5 層 + 横断 + 天御柱 4 Phase + 言霊） |
-| [docs/scope.md](docs/scope.md) | 移植規模、ファイル対応表、タイムライン |
+| [docs/roadmap.md](docs/roadmap.md) | M0〜M6 マイルストーン、依存関係グラフ、Win Condition |
+| [docs/scope.md](docs/scope.md) | 実装規模、ファイル対応表、Phase A〜E |
 | [docs/glossary.md](docs/glossary.md) | 神名 ↔ 技術役割マッピング表 |
 
 ### セットアップ
