@@ -47,10 +47,16 @@ Yamato-no-Mikoto/
 ├── current_target/            ← yamato-public 2026-05-18 スナップショット (src/ への集約後、参照のみ)
 ├── checkpoints/               ← Stage 2 学習済資産 (gitignore 対象)
 │   └── step_2000/             ← custom_heads.pt (29MB, ローカル管理) + training_log.json
-└── baselines/                 ← 評価結果 (baseline と Stage 2 比較用)
-    ├── humaneval-ts.{baseline,step2000}.{summary,aux}.json
-    ├── mbpp-ts.{baseline,step2000}.{summary,aux}.json
-    └── type_head.{random_init,step2000}.json
+├── baselines/                 ← 評価結果 (baseline と Stage 2 比較用)
+│   ├── humaneval-ts.{baseline,step2000}.{summary,aux}.json
+│   ├── mbpp-ts.{baseline,step2000}.{summary,aux}.json
+│   └── type_head.{random_init,step2000}.json
+├── data/                      ← gitignore、ローカル管理 (1.6GB)
+│   ├── raw/                   ← DefinitelyTyped, MultiPL-E, ManyTypes4TS の生データ
+│   ├── processed/sft/         ← トークン化済 SFT parquet
+│   └── eval/                  ← humaneval-ts 生成結果、type_head 評価結果
+└── models/                    ← gitignore、ローカル管理 (15GB)
+    └── Qwen2.5-Coder-7B-Instruct/  ← HF 重み + tokenizer (--model-name のデフォルト先)
 ```
 
 ### 設計ドキュメント
@@ -74,6 +80,16 @@ TS Compiler API ツール:
 
 ```bash
 cd src/ts_tools && npm install
+```
+
+`models/` と `data/` は git 管理外 (15GB + 1.6GB)。HuggingFace から取り直すか、別所からコピーする:
+
+```bash
+# Qwen2.5-Coder-7B-Instruct (15GB)
+huggingface-cli download Qwen/Qwen2.5-Coder-7B-Instruct --local-dir models/Qwen2.5-Coder-7B-Instruct
+
+# SFT データは scripts/data/prepare_sft_dataset.py で再生成
+python3 scripts/data/prepare_sft_dataset.py
 ```
 
 ### コードとデータの使い方

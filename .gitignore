@@ -1,7 +1,9 @@
-# Large checkpoint binaries (managed outside git)
+# Large binaries / datasets (managed outside git)
 checkpoints/**/*.pt
 checkpoints/**/*.bin
 checkpoints/**/*.safetensors
+models/
+data/
 
 # Python
 __pycache__/
