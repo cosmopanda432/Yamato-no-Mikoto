@@ -1,90 +1,101 @@
 # Yamato-no-Mikoto
 
-yamatoLLM の TypeScript 型認識特化版を実装するリポジトリ。設計ドキュメントと実装本体を 1 箇所に集約する。
+yamatoLLM の TypeScript 型認識特化版を実装するリポジトリ。
+**簡易版ロードマップ全マイルストーン (M0 / M1' / M2 / M6) は実装完了**。
+GPU 環境での評価実行を待つ状態。
 
-## このリポジトリの目的
+## 売り (簡易版で立てる 2 本柱)
 
-このリポジトリ自体で yamatoLLM 設計の TypeScript 版を実装する。
-設計の正史・実装規模・神名↔技術役割マッピング、そして実装本体を 1 箇所にまとめる。
+1. **型予測** — Stage 2 学習済 `TsukuyomiTypeHead` を、ランタイム時に **言霊 (Kotodama)** で
+   物理的トークンマスクとして強制する。ハルシネーション (存在しない型) を生成不可能にする。
+2. **ファイヤーウォール** — `yomotsu_hirasaka` で L3 (生成) と L5 (評価) を構造的に隔離。
+   評価器の内部状態は frozen dataclass の型契約で L3 に漏れない。
 
-## 一次情報源
-
-- yamatoLLM 設計書群: `~/yamatoLLM/yamatoLLM/docs/`
-- yamatoLLM 既存 Python 実装: `~/yamatoLLM/yamatoLLM/kojiki_lm/`
-- 実装先 (TypeScript 版): このリポジトリの [src/](src/)
-- Julia-no-Mikoto 設計原典: `~/Julia-no-Mikoto/Julia-no-Mikoto/docs/julia_no_mikoto_design_v2.md`
+詳細は [docs/roadmap_min.md](docs/roadmap_min.md) 参照。
 
 ## このリポジトリの構成
 
 ```
 Yamato-no-Mikoto/
-├── README.md                  ← この文書
-├── docs/                      ← 設計ドキュメント
-│   ├── architecture.md        ← 5 層構造の全体像
-│   ├── scope.md               ← 移植規模・タイムライン
-│   └── glossary.md            ← 神名 ↔ 技術役割マッピング
-├── src/                       ← 実装本体
-│   ├── kojiki_lm/             ← Python core (Qwen integration + TypeHead + BonpuConfidence)
-│   │   ├── yamato_model.py
-│   │   ├── yamato_config.py
-│   │   ├── qwen_adapter.py
-│   │   ├── tenson_korin_quantizer.py
-│   │   ├── kenpou/            ← ガバナンス層
-│   │   └── yomi/              ← Layer 5 (TsukuyomiTypeHead)
-│   └── ts_tools/              ← TS Compiler API ツール (Node プロジェクト)
-│       ├── package.json
-│       ├── tsconfig.json
-│       └── src/               ← tsc_strict_runner.ts, mutate_for_hallucination.ts
-├── scripts/                   ← train / eval / data
-│   ├── data/
+├── README.md                    ← この文書
+├── pyproject.toml               ← packages.find は src_min/ を指す
+├── docs/
+│   ├── roadmap_min.md           ← **実装パス (簡易版)**
+│   └── 旧ドキュメント/           ← フル版設計ドキュメント (参照用)
+│       ├── architecture.md
+│       ├── roadmap.md
+│       ├── scope.md
+│       └── glossary.md
+├── src_min/                     ← **実装本体 (active)**
+│   └── kojiki_lm/
+│       ├── yamato_qwen.py             ← M0: Qwen2 サブクラス + generate_kotodama
+│       ├── yamato_model.py            ← YamatoLLM wrapper (backbone + custom heads)
+│       ├── yamato_config.py
+│       ├── qwen_adapter.py
+│       ├── data.py
+│       ├── yomotsu_hirasaka.py        ← M1': L3↔L5 firewall
+│       ├── yomi_evaluator.py          ← M1': 簡略 evaluator
+│       ├── kotodama_token_mask.py     ← M2: TypeVocab + MaskBuilder
+│       ├── kotodama_context.py        ← M2: 型 context heuristic
+│       ├── kotodama_decoder.py        ← M2: masked decode + Firewall 統合
+│       ├── kenpou/bonpu_confidence.py
+│       └── yomi/tsukuyomi_type_head.py
+├── src/                         ← フル版実装の参照用 (frozen)
+│   ├── kojiki_lm/               ← Stage 1/2 当時のオリジナル
+│   └── ts_tools/                ← TS Compiler API (M2.5 で活用予定)
+├── tests/                       ← pytest 70 件全 pass (CPU で全結合検証)
+│   ├── conftest.py              ← MockTokenizer / MockBackbone / MockTypeHead
+│   ├── test_firewall.py / test_evaluator.py             (M1')
+│   ├── test_kotodama_{mask,context,decoder}.py          (M2)
+│   └── test_e2e.py                                      (M6 ablation)
+├── scripts/
 │   ├── eval/
-│   └── train/
-├── config/                    ← ts_type_vocab.json 他
-├── source_reference/          ← Python 既存実装 (READ-ONLY)
-│   ├── julia_no_mikoto/       ← 5 層 + KojikiLM 内部 (17 files, 9047 LOC)
-│   ├── iwato/                 ← 言語処理層 (8 files, 1591 LOC)
-│   └── kenpou/                ← ガバナンス層 (6 files, 993 LOC)
-├── current_target/            ← yamato-public 2026-05-18 スナップショット (src/ への集約後、参照のみ)
-├── checkpoints/               ← Stage 2 学習済資産 (gitignore 対象)
-│   └── step_2000/             ← custom_heads.pt (29MB, ローカル管理) + training_log.json
-├── baselines/                 ← 評価結果 (baseline と Stage 2 比較用)
+│   │   ├── run_yamato_min.py            ← M6: Kotodama 生成
+│   │   ├── judge_win_condition.py       ← M6: Win Condition 判定
+│   │   ├── generate_multipl_e.py        ← vanilla baseline 生成
+│   │   ├── run_tests.py / aux_metrics.py
+│   │   └── eval_type_head.py
+│   ├── train/ / data/
+├── config/
+│   └── ts_type_vocab.json       ← 256 entry TS 型 vocab (ManyTypes4TS 由来)
+├── baselines/                   ← Win Condition 比較根拠
 │   ├── humaneval-ts.{baseline,step2000}.{summary,aux}.json
 │   ├── mbpp-ts.{baseline,step2000}.{summary,aux}.json
 │   └── type_head.{random_init,step2000}.json
-├── data/                      ← gitignore、ローカル管理 (1.6GB)
-│   ├── raw/                   ← DefinitelyTyped, MultiPL-E, ManyTypes4TS の生データ
-│   ├── processed/sft/         ← トークン化済 SFT parquet
-│   └── eval/                  ← humaneval-ts 生成結果、type_head 評価結果
-└── models/                    ← gitignore、ローカル管理 (15GB)
-    └── Qwen2.5-Coder-7B-Instruct/  ← HF 重み + tokenizer (--model-name のデフォルト先)
+├── source_reference/            ← フル版 Python 13,500 LOC 既存実装 (READ-ONLY)
+├── current_target/              ← 過去スナップショット (参照のみ)
+├── checkpoints/step_2000/       ← Stage 2 custom_heads.pt (gitignore)
+├── data/                        ← 1.6GB (gitignore)
+└── models/                      ← 15GB (gitignore)
 ```
 
 ### 設計ドキュメント
 
 | ファイル | 内容 |
 |---------|------|
-| [docs/roadmap_min.md](docs/roadmap_min.md) | **実装パス (簡易版)**: 型予測 + ファイヤーウォール 2 本柱の最短コース |
+| [docs/roadmap_min.md](docs/roadmap_min.md) | **実装パス (簡易版)**: 完了済 + 実行手順 |
 | [docs/旧ドキュメント/architecture.md](docs/旧ドキュメント/architecture.md) | 設計の全体像（5 層 + 横断 + 天御柱 4 Phase + 言霊）※フル版 |
 | [docs/旧ドキュメント/roadmap.md](docs/旧ドキュメント/roadmap.md) | M0〜M6 フル版マイルストーン |
-| [docs/旧ドキュメント/scope.md](docs/旧ドキュメント/scope.md) | 実装規模、ファイル対応表、Phase A〜E |
+| [docs/旧ドキュメント/scope.md](docs/旧ドキュメント/scope.md) | 実装規模、ファイル対応表 |
 | [docs/旧ドキュメント/glossary.md](docs/旧ドキュメント/glossary.md) | 神名 ↔ 技術役割マッピング表 |
 
 ### セットアップ
 
-Python パッケージは src レイアウト。editable install すれば `kojiki_lm` をどこからでも import できる:
+`pyproject.toml` の `packages.find` は `src_min/` を指す。editable install で `kojiki_lm` を import 可能:
 
 ```bash
-pip install -e .                  # 必須依存のみ
-pip install -e ".[quantization]"  # bitsandbytes (4bit/8bit ロード) も入れる
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"             # torch / transformers / peft / accelerate / pyarrow / pytest
+pip install -e ".[quantization]"    # bitsandbytes (4bit/8bit ロード) を追加
 ```
 
-TS Compiler API ツール:
+TS Compiler API ツール (現状はフル版 src/ts_tools/ のみ。M2.5 で活用予定):
 
 ```bash
 cd src/ts_tools && npm install
 ```
 
-`models/` と `data/` は git 管理外 (15GB + 1.6GB)。HuggingFace から取り直すか、別所からコピーする:
+`models/` と `data/` は git 管理外:
 
 ```bash
 # Qwen2.5-Coder-7B-Instruct (15GB)
@@ -94,24 +105,43 @@ huggingface-cli download Qwen/Qwen2.5-Coder-7B-Instruct --local-dir models/Qwen2
 python3 scripts/data/prepare_sft_dataset.py
 ```
 
-### コードとデータの使い方
+### コードの使い分け
 
-- `src/` が**実装本体**。`src/kojiki_lm/` (Python core) と `src/ts_tools/` (TS Compiler API) で構成。今後の編集はすべてここで行う。
-- `source_reference/` は**参照のみ**。Python 13,500 LOC の既存実装をそのまま閲覧。実装時はここを読みながら `src/` に書き起こす。
-- `current_target/` は yamato-public からの 2026-05-18 スナップショット。`src/` への集約後は履歴比較用に保持しており、編集はしない。
-- `checkpoints/step_2000/custom_heads.pt` は Stage 2 SFT で学習済の TsukuyomiTypeHead + BonpuConfidence パラメータ (14.82M params)。新アーキテクチャでも再利用可能。
-- `baselines/` は Win Condition 判定の数値根拠。新実装の評価では必ずこれと比較する。
+- `src_min/` が**現在の実装本体**。Kotodama + Firewall + Evaluator の簡易版アーキ。
+- `src/kojiki_lm/` は Stage 1/2 当時のフル版オリジナル (frozen)。`src_min/` への差分参考のため保持。
+- `src/ts_tools/` は TS Compiler API ツール。M2.5 (symbol-aware 制約) で `valid_continuations.ts` / `token_mask_builder.ts` を追加する想定。
+- `source_reference/` は**参照のみ**。Python 13,500 LOC を読みながら必要なら `src_min/` に書き起こす。
+- `checkpoints/step_2000/custom_heads.pt` は Stage 2 学習済 14.82M params。簡易版でもそのまま再利用 (再学習しない)。
+- `baselines/` は Win Condition 比較根拠。`judge_win_condition.py` がここを読む。
 
-## 現状サマリ
+## 実装状況
 
-- Stage 1 国譲り (Qwen2.5-Coder-7B-Instruct 重み継承 + ヘッド初期化): ✅ 完了
-- Stage 2 天孫降臨 (QLoRA SFT, ManyTypes4TS): ✅ 学習完了。Win Condition は未達。理由: **設計の核 (5 層 + 横断 + 天御柱 4 Phase + 言霊) がほぼ未実装** だったため、TypeHead が単独存在しても生成に転移しない
-- Stage 3 禊以降: 着手前。**先に 5 層構造を [src/](src/) に実装する**のが本来の道
+| マイルストーン | 内容 | コミット |
+|---|---|---|
+| Stage 1 国譲り | Qwen2.5-Coder-7B-Instruct 重み継承 + ヘッド初期化 | (継承) |
+| Stage 2 天孫降臨 | QLoRA SFT, ManyTypes4TS (Win Condition 未達) | (継承) |
+| **M0** | YamatoQwenForCausalLM 空殻 | `a584326` |
+| **M1'** | Firewall + 簡略 Evaluator | `ca2e69f` |
+| **M2 (min)** | 言霊 + Kotodama decoder + Firewall 統合 | `376945d` |
+| **M6 (min)** | run_yamato_min.py + Win Condition 判定 | `8dfbe60` |
+
+テスト: `pytest tests/` で **70 / 70 pass** (CPU 環境で全結合検証可能)。
+
+次は GPU 環境での実評価。実行手順は [docs/roadmap_min.md#実行手順-gpu-環境](docs/roadmap_min.md#実行手順-gpu-環境) 参照。
 
 ## 重要原則
 
-**構造でハルシネーションを起こさせない**。
+**構造でハルシネーションを起こさせない**。検知 → リトライ型の事後監視ではなく、
+生成プロセス自体を制約することで不正出力が**物理的に起こり得ない**形にする。
 
-検知 → リトライ型の事後監視ではなく、生成プロセス自体を制約することで不正出力が**物理的に起こり得ない**形にする。これは複数の構造機構（順序制約・チケット制 Authority・言霊 Logits 操作・Shadow/Twin 並列・黄泉比良坂 firewall・修復予算・閻魔判定）の合成で実現される。単一機構だけでは効かない。
+簡易版で投入しているのは以下 2 機構:
 
-詳細は [docs/旧ドキュメント/architecture.md](docs/旧ドキュメント/architecture.md) を参照。
+1. **言霊 (Kotodama)** — TypeHead が予測した型語彙の外を logit = -∞ で物理マスク。
+2. **黄泉比良坂 (Yomotsu Hirasaka)** — L3 (生成) と L5 (評価) の境界を frozen
+   dataclass で構造的に隔離。評価器の内部状態が生成に影響しないことを型で保証。
+
+これで Win Condition を満たさなければ、設計の核 (Authority / 天御柱 4 Phase /
+Shadow・Twin / 言霊 symbol-aware 拡張 / iwato 前処理) を**根拠付きで** 1 つずつ追加する。
+拡張優先順は [docs/roadmap_min.md#達成後](docs/roadmap_min.md#達成後-win-condition-通過後の拡張順) を参照。
+
+フル版設計 (上記すべて積んだ完成形) は [docs/旧ドキュメント/architecture.md](docs/旧ドキュメント/architecture.md) を参照。
