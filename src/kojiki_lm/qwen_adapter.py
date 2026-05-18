@@ -20,6 +20,7 @@ except ImportError:
     HAS_TORCH = False
 
 from .yamato_config import YamatoConfig, LoRAConfig
+from .yamato_qwen import YamatoQwenForCausalLM
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ class QwenAdapter:
         Returns:
             (model, tokenizer)
         """
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoTokenizer
 
         resolved = QwenAdapter.resolve_model_path(model_name)
         logger.info("Loading %s (quantize=%s)", resolved, quantize)
@@ -102,7 +103,7 @@ class QwenAdapter:
                 torch_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
             load_kwargs["torch_dtype"] = torch_dtype
 
-        model = AutoModelForCausalLM.from_pretrained(resolved, **load_kwargs)
+        model = YamatoQwenForCausalLM.from_pretrained(resolved, **load_kwargs)
 
         logger.info(
             "Loaded %s: %.1fB params",

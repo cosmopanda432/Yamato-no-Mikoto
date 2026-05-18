@@ -30,7 +30,6 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from kojiki_lm.data import PAD_LABEL, ParquetSFTDataset, collate
 from kojiki_lm.qwen_adapter import QwenAdapter
@@ -78,26 +77,12 @@ def main():
     type_vocab = load_type_vocab(args.type_vocab)
     logging.info("type vocab: %d entries", len(type_vocab))
 
-    resolved = QwenAdapter.resolve_model_path(args.model_name)
-    logging.info("Loading backbone: %s (quantize=%s, FROZEN)", resolved, args.quantize)
-    tokenizer = AutoTokenizer.from_pretrained(resolved, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    load_kwargs = {"device_map": "auto", "trust_remote_code": True}
-    if args.quantize == "4bit":
-        load_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-        )
-    elif args.quantize == "8bit":
-        load_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
-    else:
-        load_kwargs["torch_dtype"] = torch.bfloat16
-
-    backbone = AutoModelForCausalLM.from_pretrained(resolved, **load_kwargs)
+    logging.info("Loading backbone: %s (quantize=%s, FROZEN)", args.model_name, args.quantize)
+    quantize = None if args.quantize == "none" else args.quantize
+    backbone, tokenizer = QwenAdapter.load_base_model(
+        model_name=args.model_name,
+        quantize=quantize,
+    )
     for p in backbone.parameters():
         p.requires_grad = False
     backbone.eval()
