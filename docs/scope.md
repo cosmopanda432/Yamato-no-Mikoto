@@ -2,7 +2,7 @@
 
 ## 戦略
 
-既存の Python 実装 (`~/yamatoLLM/yamatoLLM/kojiki_lm/`) は **13,500 LOC が完成済**。これをこのリポジトリの [current_target/](../current_target/) 配下に **再実装 + TS 翻案 + 一部新規** で書き起こす。
+既存の Python 実装 (`~/yamatoLLM/yamatoLLM/kojiki_lm/`) は **13,500 LOC が完成済**。これをこのリポジトリの [src/](../src/) 配下に **再実装 + TS 翻案 + 一部新規** で書き起こす。
 
 学習データ新規作成・追加学習・RunPod 費用は **不要**。推論時アーキテクチャの実装のみ。
 
@@ -12,7 +12,7 @@
 
 `~/yamatoLLM/yamatoLLM/kojiki_lm/julia_no_mikoto/` の中で、TS でも論理がそのまま使えるもの:
 
-| ソースファイル | LOC | 配置先 (current_target/) | TS 適応箇所 |
+| ソースファイル | LOC | 配置先 (src/) | TS 適応箇所 |
 |------|----|---|---|
 | `zoka_sanshin.py` | 372 | `kojiki_lm/zoka_sanshin.py` | なし（純粋ロジック） |
 | `yomotsu_hirasaka.py` | 554 | `kojiki_lm/yomotsu_hirasaka.py` | なし |
@@ -29,7 +29,7 @@
 
 ### B. TS 翻案が大きい
 
-| ソースファイル | LOC | 配置先 (current_target/) | TS 適応箇所 |
+| ソースファイル | LOC | 配置先 (src/) | TS 適応箇所 |
 |------|----|---|---|
 | `iwato/omoikane_intent.py` | 163 | `kojiki_lm/iwato/omoikane_intent.py` | 意図分類プロンプト、ルーティング基準を TS 文脈に |
 | `iwato/kotoyosashi_protocol.py` | 228 | `kojiki_lm/iwato/kotoyosashi_protocol.py` | NL → TS コード生成指示の変換 |

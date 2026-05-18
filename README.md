@@ -11,7 +11,7 @@ yamatoLLM の TypeScript 型認識特化版を実装するリポジトリ。設�
 
 - yamatoLLM 設計書群: `~/yamatoLLM/yamatoLLM/docs/`
 - yamatoLLM 既存 Python 実装: `~/yamatoLLM/yamatoLLM/kojiki_lm/`
-- 実装先 (TypeScript 版): このリポジトリの [current_target/kojiki_lm/](current_target/kojiki_lm/)
+- 実装先 (TypeScript 版): このリポジトリの [src/](src/)
 - Julia-no-Mikoto 設計原典: `~/Julia-no-Mikoto/Julia-no-Mikoto/docs/julia_no_mikoto_design_v2.md`
 
 ## このリポジトリの構成
@@ -23,16 +23,30 @@ Yamato-no-Mikoto/
 │   ├── architecture.md        ← 5 層構造の全体像
 │   ├── scope.md               ← 移植規模・タイムライン
 │   └── glossary.md            ← 神名 ↔ 技術役割マッピング
-├── source_reference/          ← 移植元 (yamatoLLM Python 実装、READ-ONLY)
+├── src/                       ← 実装本体
+│   ├── kojiki_lm/             ← Python core (Qwen integration + TypeHead + BonpuConfidence)
+│   │   ├── yamato_model.py
+│   │   ├── yamato_config.py
+│   │   ├── qwen_adapter.py
+│   │   ├── tenson_korin_quantizer.py
+│   │   ├── kenpou/            ← ガバナンス層
+│   │   └── yomi/              ← Layer 5 (TsukuyomiTypeHead)
+│   └── ts_tools/              ← TS Compiler API ツール (Node プロジェクト)
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── src/               ← tsc_strict_runner.ts, mutate_for_hallucination.ts
+├── scripts/                   ← train / eval / data
+│   ├── data/
+│   ├── eval/
+│   └── train/
+├── config/                    ← ts_type_vocab.json 他
+├── source_reference/          ← Python 既存実装 (READ-ONLY)
 │   ├── julia_no_mikoto/       ← 5 層 + KojikiLM 内部 (17 files, 9047 LOC)
 │   ├── iwato/                 ← 言語処理層 (8 files, 1591 LOC)
 │   └── kenpou/                ← ガバナンス層 (6 files, 993 LOC)
-├── current_target/            ← 実装ディレクトリ本体 (TypeScript 版 yamatoLLM)
-│   ├── kojiki_lm/             ← Qwen integration + TypeHead + BonpuConfidence
-│   ├── scripts/               ← train / eval / data / ts_tools
-│   └── config/                ← ts_type_vocab.json 他
-├── checkpoints/               ← Stage 2 学習済資産 (29MB)
-│   └── step_2000/             ← custom_heads.pt + training_log.json
+├── current_target/            ← yamato-public 2026-05-18 スナップショット (src/ への集約後、参照のみ)
+├── checkpoints/               ← Stage 2 学習済資産 (gitignore 対象)
+│   └── step_2000/             ← custom_heads.pt (29MB, ローカル管理) + training_log.json
 └── baselines/                 ← 評価結果 (baseline と Stage 2 比較用)
     ├── humaneval-ts.{baseline,step2000}.{summary,aux}.json
     ├── mbpp-ts.{baseline,step2000}.{summary,aux}.json
@@ -49,8 +63,9 @@ Yamato-no-Mikoto/
 
 ### コードとデータの使い方
 
-- `source_reference/` は**参照のみ**。Python 13,500 LOC の既存実装をそのまま閲覧。実装時はここを読みながら `current_target/` に TypeScript で再実装する。
-- `current_target/` が**実装ディレクトリ本体**。yamato-public からの 2026-05-18 時点スナップショットを出発点とし、以降の編集はすべてここで行う。
+- `src/` が**実装本体**。`src/kojiki_lm/` (Python core) と `src/ts_tools/` (TS Compiler API) で構成。今後の編集はすべてここで行う。
+- `source_reference/` は**参照のみ**。Python 13,500 LOC の既存実装をそのまま閲覧。実装時はここを読みながら `src/` に書き起こす。
+- `current_target/` は yamato-public からの 2026-05-18 スナップショット。`src/` への集約後は履歴比較用に保持しており、編集はしない。
 - `checkpoints/step_2000/custom_heads.pt` は Stage 2 SFT で学習済の TsukuyomiTypeHead + BonpuConfidence パラメータ (14.82M params)。新アーキテクチャでも再利用可能。
 - `baselines/` は Win Condition 判定の数値根拠。新実装の評価では必ずこれと比較する。
 
@@ -58,7 +73,7 @@ Yamato-no-Mikoto/
 
 - Stage 1 国譲り (Qwen2.5-Coder-7B-Instruct 重み継承 + ヘッド初期化): ✅ 完了
 - Stage 2 天孫降臨 (QLoRA SFT, ManyTypes4TS): ✅ 学習完了。Win Condition は未達。理由: **設計の核 (5 層 + 横断 + 天御柱 4 Phase + 言霊) がほぼ未実装** だったため、TypeHead が単独存在しても生成に転移しない
-- Stage 3 禊以降: 着手前。**先に 5 層構造を [current_target/](current_target/) に実装する**のが本来の道
+- Stage 3 禊以降: 着手前。**先に 5 層構造を [src/](src/) に実装する**のが本来の道
 
 ## 重要原則
 
