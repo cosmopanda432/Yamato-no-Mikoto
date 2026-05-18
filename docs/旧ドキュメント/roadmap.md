@@ -1,6 +1,8 @@
-# Roadmap — yamatoLLM TS 版実装
+# Roadmap (Full) — yamatoLLM TS 版実装
 
-[architecture.md](architecture.md) が要求する **5 層 + 横断 + 天御柱 4 Phase + 言霊** を `src/` に積むまでの順序。
+[architecture.md](architecture.md) が要求する **5 層 + 横断 + 天御柱 4 Phase + 言霊** を `src/` に積むまでの順序 (フル版、~9,200 LOC)。
+
+実装パスは **簡易版** [roadmap_min.md](roadmap_min.md) に切替。フル版は Win Condition 達成後の拡張参照用として保持。
 
 ## 現状 (2026-05-18)
 

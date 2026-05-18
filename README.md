@@ -63,10 +63,11 @@ Yamato-no-Mikoto/
 
 | ファイル | 内容 |
 |---------|------|
-| [docs/architecture.md](docs/architecture.md) | 設計の全体像（5 層 + 横断 + 天御柱 4 Phase + 言霊） |
-| [docs/roadmap.md](docs/roadmap.md) | M0〜M6 マイルストーン、依存関係グラフ、Win Condition |
-| [docs/scope.md](docs/scope.md) | 実装規模、ファイル対応表、Phase A〜E |
-| [docs/glossary.md](docs/glossary.md) | 神名 ↔ 技術役割マッピング表 |
+| [docs/roadmap_min.md](docs/roadmap_min.md) | **実装パス (簡易版)**: 型予測 + ファイヤーウォール 2 本柱の最短コース |
+| [docs/旧ドキュメント/architecture.md](docs/旧ドキュメント/architecture.md) | 設計の全体像（5 層 + 横断 + 天御柱 4 Phase + 言霊）※フル版 |
+| [docs/旧ドキュメント/roadmap.md](docs/旧ドキュメント/roadmap.md) | M0〜M6 フル版マイルストーン |
+| [docs/旧ドキュメント/scope.md](docs/旧ドキュメント/scope.md) | 実装規模、ファイル対応表、Phase A〜E |
+| [docs/旧ドキュメント/glossary.md](docs/旧ドキュメント/glossary.md) | 神名 ↔ 技術役割マッピング表 |
 
 ### セットアップ
 
@@ -113,4 +114,4 @@ python3 scripts/data/prepare_sft_dataset.py
 
 検知 → リトライ型の事後監視ではなく、生成プロセス自体を制約することで不正出力が**物理的に起こり得ない**形にする。これは複数の構造機構（順序制約・チケット制 Authority・言霊 Logits 操作・Shadow/Twin 並列・黄泉比良坂 firewall・修復予算・閻魔判定）の合成で実現される。単一機構だけでは効かない。
 
-詳細は [docs/architecture.md](docs/architecture.md) を参照。
+詳細は [docs/旧ドキュメント/architecture.md](docs/旧ドキュメント/architecture.md) を参照。
