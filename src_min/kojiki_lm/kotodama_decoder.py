@@ -43,6 +43,10 @@ class KotodamaConfig:
     temperature: float = 1.0
     do_sample: bool = False      # 既定は greedy (再現性のため)
 
+    # Ablation 用 (M6 評価)
+    mask_enabled: bool = True       # False: 言霊マスクを掛けない (= vanilla decode)
+    firewall_enabled: bool = True   # False: Firewall を介さず常に COMMIT 扱い
+
 
 @dataclass
 class StepLog:
@@ -149,9 +153,12 @@ class KotodamaDecoder:
                 top_type_ids=top_type_ids,
             )
 
-            # Firewall 問い合わせ
+            # Firewall 問い合わせ (firewall_enabled=False の場合は bypass)
             is_last = step == cfg.max_new_tokens - 1
-            if (step + 1) % cfg.firewall_interval == 0 or is_last:
+            should_check = cfg.firewall_enabled and (
+                (step + 1) % cfg.firewall_interval == 0 or is_last
+            )
+            if should_check:
                 verdict = self.firewall.send(
                     L3ToL5Payload(
                         text=text_buffer,
@@ -191,6 +198,8 @@ class KotodamaDecoder:
         last_logits: torch.Tensor,
     ) -> tuple[bool, int, tuple[int, ...]]:
         """type-context なら mask を適用し、適用フラグ + 統計を返す"""
+        if not self.config.mask_enabled:
+            return False, 0, ()
         if not is_type_context(text_buffer):
             return False, 0, ()
 
