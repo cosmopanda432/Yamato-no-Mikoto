@@ -24,21 +24,20 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 import time
 from collections import Counter
 from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+from kojiki_lm.data import PAD_LABEL, ParquetSFTDataset, collate
+from kojiki_lm.qwen_adapter import QwenAdapter
+from kojiki_lm.yamato_config import YamatoConfig
+from kojiki_lm.yamato_model import YamatoLLM
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from scripts.train.sft_yamato import ParquetSFTDataset, collate  # noqa: E402
-
-PAD_LABEL = -100
 
 
 def parse_args():
@@ -75,11 +74,6 @@ def load_type_vocab(path: str) -> dict[int, dict]:
 def main():
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-
-    from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-    from kojiki_lm.yamato_config import YamatoConfig
-    from kojiki_lm.yamato_model import YamatoLLM
-    from kojiki_lm.qwen_adapter import QwenAdapter
 
     type_vocab = load_type_vocab(args.type_vocab)
     logging.info("type vocab: %d entries", len(type_vocab))

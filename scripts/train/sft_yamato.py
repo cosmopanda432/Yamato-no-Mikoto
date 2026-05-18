@@ -40,23 +40,23 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import sys
 import time
 from pathlib import Path
 from typing import Dict, List
 
-import pyarrow.parquet as pq
 import torch
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.optim.lr_scheduler import LambdaLR
+from torch.utils.data import DataLoader
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+from kojiki_lm.data import PAD_LABEL, ParquetSFTDataset, collate
+from kojiki_lm.qwen_adapter import QwenAdapter
+from kojiki_lm.yamato_config import YamatoConfig
+from kojiki_lm.yamato_model import YamatoLLM
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-# Python は実行スクリプトのあるディレクトリを sys.path[0] にする (CWD は入らない)
-# ので repo root を明示的に追加して `kojiki_lm` を import 可能にする。
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-PAD_LABEL = -100
 
 
 def parse_args() -> argparse.Namespace:
@@ -95,71 +95,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-class ParquetSFTDataset(Dataset):
-    """
-    pyarrow Table を columnar のまま保持し、__getitem__ で必要な行だけ Python に
-    変換する。`to_pylist()` で全件 Python list 化すると 30万行クラスの
-    train.parquet で RAM 数十GBを使い切るため。
-    """
-
-    def __init__(self, parquet_path: str, limit: int = None, max_seq_length: int = None):
-        table = pq.read_table(parquet_path)
-        if limit is not None:
-            table = table.slice(0, limit)
-        # column ごとに pyarrow ChunkedArray のまま保持
-        self._input_ids = table.column("input_ids")
-        self._attention_mask = table.column("attention_mask")
-        self._labels = table.column("labels")
-        self._type_labels = table.column("type_labels")
-        self._n_rows = table.num_rows
-        self.max_seq_length = max_seq_length
-
-    def __len__(self):
-        return self._n_rows
-
-    def __getitem__(self, idx):
-        # ChunkedArray[idx].as_py() で 1 行だけ Python list に変換
-        ids = self._input_ids[idx].as_py()
-        am = self._attention_mask[idx].as_py()
-        lb = self._labels[idx].as_py()
-        tl = self._type_labels[idx].as_py()
-        if self.max_seq_length is not None and len(ids) > self.max_seq_length:
-            ids = ids[: self.max_seq_length]
-            am = am[: self.max_seq_length]
-            lb = lb[: self.max_seq_length]
-            tl = tl[: self.max_seq_length]
-        return {
-            "input_ids": torch.tensor(ids, dtype=torch.long),
-            "attention_mask": torch.tensor(am, dtype=torch.long),
-            "labels": torch.tensor(lb, dtype=torch.long),
-            "type_labels": torch.tensor(tl, dtype=torch.long),
-        }
-
-
-def collate(batch: List[Dict], pad_id: int) -> Dict[str, torch.Tensor]:
-    max_len = max(item["input_ids"].shape[0] for item in batch)
-
-    def pad(t, pad_val):
-        n = max_len - t.shape[0]
-        if n == 0:
-            return t
-        return torch.cat([t, torch.full((n,), pad_val, dtype=t.dtype)])
-
-    return {
-        "input_ids": torch.stack([pad(b["input_ids"], pad_id) for b in batch]),
-        "attention_mask": torch.stack([pad(b["attention_mask"], 0) for b in batch]),
-        "labels": torch.stack([pad(b["labels"], PAD_LABEL) for b in batch]),
-        "type_labels": torch.stack([pad(b["type_labels"], PAD_LABEL) for b in batch]),
-    }
-
-
 def build_model(args: argparse.Namespace):
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-
-    from kojiki_lm.yamato_config import YamatoConfig
-    from kojiki_lm.yamato_model import YamatoLLM
-    from kojiki_lm.qwen_adapter import QwenAdapter
-
     resolved = QwenAdapter.resolve_model_path(args.model_name)
     logging.info("Loading backbone: %s (quantize=%s, FROZEN)", resolved, args.quantize)
 
@@ -216,7 +152,6 @@ def build_optimizer(args, head_params):
 def main():
     args = parse_args()
     # ログは stdout に出して flush を即時に (tee/nohup 越しでも見えるように)
-    import sys
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     root = logging.getLogger()
@@ -268,8 +203,6 @@ def main():
     optimizer = build_optimizer(args, head_params)
 
     # 線形 warmup + cosine decay
-    from torch.optim.lr_scheduler import LambdaLR
-    import math
     warmup_steps = max(int(total_update_steps * args.warmup_ratio), 1)
     def lr_lambda(step):
         if step < warmup_steps:

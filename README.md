@@ -61,6 +61,21 @@ Yamato-no-Mikoto/
 | [docs/scope.md](docs/scope.md) | 移植規模、ファイル対応表、タイムライン |
 | [docs/glossary.md](docs/glossary.md) | 神名 ↔ 技術役割マッピング表 |
 
+### セットアップ
+
+Python パッケージは src レイアウト。editable install すれば `kojiki_lm` をどこからでも import できる:
+
+```bash
+pip install -e .                  # 必須依存のみ
+pip install -e ".[quantization]"  # bitsandbytes (4bit/8bit ロード) も入れる
+```
+
+TS Compiler API ツール:
+
+```bash
+cd src/ts_tools && npm install
+```
+
 ### コードとデータの使い方
 
 - `src/` が**実装本体**。`src/kojiki_lm/` (Python core) と `src/ts_tools/` (TS Compiler API) で構成。今後の編集はすべてここで行う。

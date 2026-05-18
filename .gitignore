@@ -13,11 +13,12 @@ venv/
 # Node
 node_modules/
 
-# OS / editors
+# OS / editors / tooling
 .DS_Store
 *.swp
 .idea/
 .vscode/
+.claude/
 
 # Env / secrets
 .env
