@@ -24,4 +24,4 @@ quantization = ["bitsandbytes>=0.43"]
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src_min"]
