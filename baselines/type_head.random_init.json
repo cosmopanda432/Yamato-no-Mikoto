@@ -1,0 +1,224 @@
+{
+  "checkpoint": "random_init",
+  "n_samples_evaluated": 200,
+  "n_labels_total": 1413,
+  "n_labels_correct_top1": 0,
+  "n_labels_correct_topk": 3,
+  "top_k": 5,
+  "top1_accuracy": 0.0,
+  "top5_accuracy": 0.0021231422505307855,
+  "top20_classes_by_frequency": [
+    {
+      "id": 0,
+      "name": "UNK",
+      "category": "special",
+      "n": 526,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 2,
+      "name": "string",
+      "category": "primitives",
+      "n": 281,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 5,
+      "name": "array",
+      "category": "library",
+      "n": 124,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 3,
+      "name": "number",
+      "category": "primitives",
+      "n": 81,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 8,
+      "name": "boolean",
+      "category": "primitives",
+      "n": 66,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 87,
+      "name": "Address",
+      "category": "library",
+      "n": 64,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 4,
+      "name": "void",
+      "category": "primitives",
+      "n": 59,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 34,
+      "name": "BigNumber",
+      "category": "library",
+      "n": 48,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 7,
+      "name": "Promise",
+      "category": "builtins",
+      "n": 37,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 16,
+      "name": "Observable",
+      "category": "library",
+      "n": 20,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 24,
+      "name": "Error",
+      "category": "builtins",
+      "n": 10,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 15,
+      "name": "HTMLElement",
+      "category": "library",
+      "n": 10,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 12,
+      "name": "Array",
+      "category": "builtins",
+      "n": 10,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 144,
+      "name": "NextFunction",
+      "category": "library",
+      "n": 10,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 43,
+      "name": "Router",
+      "category": "library",
+      "n": 8,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 11,
+      "name": "T",
+      "category": "type_param",
+      "n": 8,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 6,
+      "name": "object",
+      "category": "primitives",
+      "n": 6,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 127,
+      "name": "HttpClient",
+      "category": "library",
+      "n": 5,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 167,
+      "name": "Routes",
+      "category": "library",
+      "n": 5,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 162,
+      "name": "Filter",
+      "category": "library",
+      "n": 4,
+      "correct": 0,
+      "acc": 0.0
+    }
+  ],
+  "most_predicted_classes": [
+    {
+      "id": 221,
+      "name": "WebGLRenderingContext",
+      "count": 311
+    },
+    {
+      "id": 30,
+      "name": "Context",
+      "count": 189
+    },
+    {
+      "id": 211,
+      "name": "Transform",
+      "count": 124
+    },
+    {
+      "id": 191,
+      "name": "MemoizedSelector",
+      "count": 80
+    },
+    {
+      "id": 165,
+      "name": "Task",
+      "count": 76
+    },
+    {
+      "id": 222,
+      "name": "Point3d",
+      "count": 60
+    },
+    {
+      "id": 153,
+      "name": "ShallowWrapper",
+      "count": 53
+    },
+    {
+      "id": 115,
+      "name": "CanvasRenderingContext2D",
+      "count": 34
+    },
+    {
+      "id": 59,
+      "name": "Player",
+      "count": 31
+    },
+    {
+      "id": 252,
+      "name": "ErrorType",
+      "count": 30
+    }
+  ]
+}

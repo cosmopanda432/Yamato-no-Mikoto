@@ -1,0 +1,224 @@
+{
+  "checkpoint": "checkpoints/yamato_sft_a6000/step_2000/custom_heads.pt",
+  "n_samples_evaluated": 200,
+  "n_labels_total": 1413,
+  "n_labels_correct_top1": 991,
+  "n_labels_correct_topk": 1286,
+  "top_k": 5,
+  "top1_accuracy": 0.7013446567586695,
+  "top5_accuracy": 0.9101203113941967,
+  "top20_classes_by_frequency": [
+    {
+      "id": 0,
+      "name": "UNK",
+      "category": "special",
+      "n": 526,
+      "correct": 418,
+      "acc": 0.7946768060836502
+    },
+    {
+      "id": 2,
+      "name": "string",
+      "category": "primitives",
+      "n": 281,
+      "correct": 263,
+      "acc": 0.9359430604982206
+    },
+    {
+      "id": 5,
+      "name": "array",
+      "category": "library",
+      "n": 124,
+      "correct": 62,
+      "acc": 0.5
+    },
+    {
+      "id": 3,
+      "name": "number",
+      "category": "primitives",
+      "n": 81,
+      "correct": 66,
+      "acc": 0.8148148148148148
+    },
+    {
+      "id": 8,
+      "name": "boolean",
+      "category": "primitives",
+      "n": 66,
+      "correct": 37,
+      "acc": 0.5606060606060606
+    },
+    {
+      "id": 87,
+      "name": "Address",
+      "category": "library",
+      "n": 64,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 4,
+      "name": "void",
+      "category": "primitives",
+      "n": 59,
+      "correct": 54,
+      "acc": 0.9152542372881356
+    },
+    {
+      "id": 34,
+      "name": "BigNumber",
+      "category": "library",
+      "n": 48,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 7,
+      "name": "Promise",
+      "category": "builtins",
+      "n": 37,
+      "correct": 27,
+      "acc": 0.7297297297297297
+    },
+    {
+      "id": 16,
+      "name": "Observable",
+      "category": "library",
+      "n": 20,
+      "correct": 18,
+      "acc": 0.9
+    },
+    {
+      "id": 24,
+      "name": "Error",
+      "category": "builtins",
+      "n": 10,
+      "correct": 9,
+      "acc": 0.9
+    },
+    {
+      "id": 15,
+      "name": "HTMLElement",
+      "category": "library",
+      "n": 10,
+      "correct": 3,
+      "acc": 0.3
+    },
+    {
+      "id": 12,
+      "name": "Array",
+      "category": "builtins",
+      "n": 10,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 144,
+      "name": "NextFunction",
+      "category": "library",
+      "n": 10,
+      "correct": 10,
+      "acc": 1.0
+    },
+    {
+      "id": 43,
+      "name": "Router",
+      "category": "library",
+      "n": 8,
+      "correct": 8,
+      "acc": 1.0
+    },
+    {
+      "id": 11,
+      "name": "T",
+      "category": "type_param",
+      "n": 8,
+      "correct": 1,
+      "acc": 0.125
+    },
+    {
+      "id": 6,
+      "name": "object",
+      "category": "primitives",
+      "n": 6,
+      "correct": 2,
+      "acc": 0.3333333333333333
+    },
+    {
+      "id": 127,
+      "name": "HttpClient",
+      "category": "library",
+      "n": 5,
+      "correct": 5,
+      "acc": 1.0
+    },
+    {
+      "id": 167,
+      "name": "Routes",
+      "category": "library",
+      "n": 5,
+      "correct": 0,
+      "acc": 0.0
+    },
+    {
+      "id": 162,
+      "name": "Filter",
+      "category": "library",
+      "n": 4,
+      "correct": 0,
+      "acc": 0.0
+    }
+  ],
+  "most_predicted_classes": [
+    {
+      "id": 0,
+      "name": "UNK",
+      "count": 514
+    },
+    {
+      "id": 2,
+      "name": "string",
+      "count": 365
+    },
+    {
+      "id": 3,
+      "name": "number",
+      "count": 181
+    },
+    {
+      "id": 5,
+      "name": "array",
+      "count": 90
+    },
+    {
+      "id": 4,
+      "name": "void",
+      "count": 78
+    },
+    {
+      "id": 8,
+      "name": "boolean",
+      "count": 38
+    },
+    {
+      "id": 7,
+      "name": "Promise",
+      "count": 36
+    },
+    {
+      "id": 16,
+      "name": "Observable",
+      "count": 28
+    },
+    {
+      "id": 6,
+      "name": "object",
+      "count": 14
+    },
+    {
+      "id": 24,
+      "name": "Error",
+      "count": 10
+    }
+  ]
+}

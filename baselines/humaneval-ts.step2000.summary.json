@@ -1,0 +1,962 @@
+{
+  "n_total": 159,
+  "n_pass": 119,
+  "pass_at_1": 0.7484276729559748,
+  "avg_runtime_sec": 0.24602369242494213,
+  "details": [
+    {
+      "name": "HumanEval_0_has_close_elements",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_100_make_a_pile",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_101_words_string",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_102_choose_num",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_103_rounded_avg",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_104_unique_digits",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_105_by_length",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_106_f",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_107_even_odd_palindrome",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_108_count_nums",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_109_move_one_ball",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_10_make_palindrome",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_110_exchange",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_111_histogram",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_112_reverse_delete",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_113_odd_count",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_114_minSubArraySum",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_115_max_fill",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_116_sort_array",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_117_select_words",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_118_get_closest_vowel",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_119_match_parens",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_11_string_xor",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_120_maximum",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_121_solution",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_122_add_elements",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_123_get_odd_collatz",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_124_valid_date",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_125_split_words",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_126_is_sorted",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_127_intersection",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_128_prod_signs",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_129_minPath",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_12_longest",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_130_tri",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_131_digits",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_132_is_nested",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_133_sum_squares",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_134_check_if_last_char_is_a_letter",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_135_can_arrange",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_136_largest_smallest_integers",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_138_is_equal_to_sum_even",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_139_special_factorial",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_13_greatest_common_divisor",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_140_fix_spaces",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_141_file_name_check",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_142_sum_squares",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_143_words_in_sentence",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_144_simplify",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_145_order_by_points",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_146_specialFilter",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_147_get_max_triples",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_149_sorted_list_sum",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_14_all_prefixes",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_150_x_or_y",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_151_double_the_difference",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_152_compare",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_153_Strongest_Extension",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_154_cycpattern_check",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_155_even_odd_count",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_156_int_to_mini_roman",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_157_right_angle_triangle",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_158_find_max",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_159_eat",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_15_string_sequence",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_160_do_algebra",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_161_solve",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_162_string_to_md5",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_163_generate_integers",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_16_count_distinct_characters",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_17_parse_music",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_18_how_many_times",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_19_sort_numbers",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_1_separate_paren_groups",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_20_find_closest_elements",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_21_rescale_to_unit",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_22_filter_integers",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_23_strlen",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_24_largest_divisor",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_25_factorize",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_26_remove_duplicates",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_27_flip_case",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_28_concatenate",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_29_filter_by_prefix",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_2_truncate_number",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_30_get_positive",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_31_is_prime",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_33_sort_third",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_34_unique",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_35_max_element",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_36_fizz_buzz",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_37_sort_even",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_39_prime_fib",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_3_below_zero",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_40_triples_sum_to_zero",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_41_car_race_collision",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_42_incr_list",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_43_pairs_sum_to_zero",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_44_change_base",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_45_triangle_area",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_46_fib4",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_47_median",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_48_is_palindrome",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_49_modp",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_4_mean_absolute_deviation",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_51_remove_vowels",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_52_below_threshold",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_53_add",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_54_same_chars",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_55_fib",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_56_correct_bracketing",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_57_monotonic",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_58_common",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_59_largest_prime_factor",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_5_intersperse",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_60_sum_to_n",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_61_correct_bracketing",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_62_derivative",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_63_fibfib",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_64_vowels_count",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_65_circular_shift",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_66_digitSum",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_67_fruit_distribution",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_68_pluck",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_69_search",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_6_parse_nested_parens",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_70_strange_sort_list",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_71_triangle_area",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_72_will_it_fly",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_73_smallest_change",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_74_total_match",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_75_is_multiply_prime",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_76_is_simple_power",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_77_iscube",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_78_hex_key",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_79_decimal_to_binary",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_7_filter_by_substring",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_80_is_happy",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_81_numerical_letter_grade",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_82_prime_length",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_83_starts_one_ends",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_84_solve",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_85_add",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_86_anti_shuffle",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_87_get_row",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_88_sort_array",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_89_encrypt",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_8_sum_product",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_90_next_smallest",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_91_is_bored",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_92_any_int",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_93_encode",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_94_skjkasdkd",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_95_check_dict_case",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_96_count_up_to",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_97_multiply",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_98_count_upper",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_99_closest_integer",
+      "ok": false,
+      "exit_code": 1,
+      "timeout": false
+    },
+    {
+      "name": "HumanEval_9_rolling_max",
+      "ok": true,
+      "exit_code": 0,
+      "timeout": false
+    }
+  ]
+}
