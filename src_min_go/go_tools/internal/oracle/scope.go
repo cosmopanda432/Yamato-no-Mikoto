@@ -18,10 +18,13 @@ import (
 //	`)\s+$`         → func_return (引数閉じ後の空白)
 //	`var\s+\w+\s+$` → var_decl
 //	`const\s+\w+\s+$` → const_decl
+// 注意: Qwen BPE は token に前置空白を含むため、decode 中の text_buffer は
+// `var result` (空白なし末尾) で 1 step 止まることが typical。Python 側 filter
+// と歩調を合わせ、ここでも `\s*$` (0 個以上の末尾空白) を使う。
 var (
-	reFuncReturn = regexp.MustCompile(`\)\s+$`)
-	reVarDecl    = regexp.MustCompile(`\bvar\s+\w+\s+$`)
-	reConstDecl  = regexp.MustCompile(`\bconst\s+\w+\s+$`)
+	reFuncReturn = regexp.MustCompile(`\)\s*$`)
+	reVarDecl    = regexp.MustCompile(`\bvar\s+\w+\s*$`)
+	reConstDecl  = regexp.MustCompile(`\bconst\s+\w+\s*$`)
 	// 不等式 `i <`, `x <`, `len(s) <` を偽陽性で食わないことを担保。
 	// (Go では `<` を「ジェネリック」と誤認することはないので影響は限定的だが
 	//  decode 時のロバスト性のため明示する。)
