@@ -115,7 +115,9 @@ def build_yamato(args) -> tuple[YamatoLLM, KotodamaMaskBuilder, YomotsuHirasaka]
     logger.info("Loaded custom_heads from %s", args.custom_heads)
 
     type_vocab = TypeVocabIndex(args.type_vocab)
-    mask_builder = KotodamaMaskBuilder(tokenizer, type_vocab)
+    # LM head の真の幅 (Qwen2.5 では len(tokenizer) より大きいことがある) に合わせる
+    lm_vocab_size = int(getattr(backbone.config, "vocab_size", len(tokenizer)))
+    mask_builder = KotodamaMaskBuilder(tokenizer, type_vocab, vocab_size=lm_vocab_size)
 
     firewall = YomotsuHirasaka(YomiEvaluator())
 

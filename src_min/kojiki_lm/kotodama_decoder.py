@@ -23,7 +23,7 @@ from typing import Any
 
 import torch
 
-from .kotodama_context import is_type_context
+from .kotodama_context import find_predict_target_char_span, is_type_context
 from .kotodama_token_mask import KotodamaMaskBuilder
 from .yomotsu_hirasaka import (
     L3ToL5Payload,
@@ -125,13 +125,14 @@ class KotodamaDecoder:
                 use_cache=False,
                 return_dict=True,
             )
-            last_hidden = outputs.hidden_states[-1][:, -1:, :]   # [B, 1, d]
+            full_hidden = outputs.hidden_states[-1]              # [B, L, d]
             last_logits = outputs.logits[:, -1, :]               # [B, V]
 
             masked, num_allowed, top_type_ids = self._maybe_apply_mask(
                 text_buffer=text_buffer,
-                last_hidden=last_hidden,
+                full_hidden=full_hidden,
                 last_logits=last_logits,
+                tokenizer=tokenizer,
             )
 
             next_tok = self._sample(last_logits)
@@ -194,17 +195,35 @@ class KotodamaDecoder:
     def _maybe_apply_mask(
         self,
         text_buffer: str,
-        last_hidden: torch.Tensor,
+        full_hidden: torch.Tensor,
         last_logits: torch.Tensor,
+        tokenizer: Any,
     ) -> tuple[bool, int, tuple[int, ...]]:
-        """type-context なら mask を適用し、適用フラグ + 統計を返す"""
+        """type-context なら mask を適用し、適用フラグ + 統計を返す
+
+        TypeHead の入力 hidden は **学習時の label 位置 (= type-annotated identifier の
+        最初の subword)** に揃える。これが取れない場合は mask しない (旧版の「:
+        直後の空白で TypeHead を呼ぶ」フォールバックは学習タスクと不整合な予測になり、
+        識別子位置で型語彙を強制してハルシネーションを増やすため廃止)。
+        """
         if not self.config.mask_enabled:
             return False, 0, ()
         if not is_type_context(text_buffer):
             return False, 0, ()
 
-        type_out = self.type_head(last_hidden)
-        type_logits: torch.Tensor = type_out["type_logits"]    # [B, 1, T]
+        target_span = find_predict_target_char_span(text_buffer)
+        if target_span is None:
+            return False, 0, ()
+
+        target_pos = self._char_span_to_token_index(
+            text_buffer, target_span, tokenizer, full_hidden.size(1)
+        )
+        if target_pos is None:
+            return False, 0, ()
+
+        identifier_hidden = full_hidden[:, target_pos:target_pos + 1, :]   # [B, 1, d]
+        type_out = self.type_head(identifier_hidden)
+        type_logits: torch.Tensor = type_out["type_logits"]                # [B, 1, T]
         topk = type_logits[0, 0].topk(self.config.top_k_types)
         top_type_ids = tuple(int(i) for i in topk.indices.tolist())
 
@@ -222,6 +241,40 @@ class KotodamaDecoder:
         # last_logits は [B, V]。in-place で -inf を適用
         last_logits.masked_fill_(~mask_dev.unsqueeze(0), float("-inf"))
         return True, num_allowed, top_type_ids
+
+    @staticmethod
+    def _char_span_to_token_index(
+        text: str,
+        char_span: tuple[int, int],
+        tokenizer: Any,
+        max_token_pos: int,
+    ) -> int | None:
+        """text を tokenize し直し、char_span と最初に overlap する token index を返す
+
+        学習時の align_labels (scripts/data/prepare_sft_dataset.py) と同じロジック:
+        identifier の char-span と最初に overlap する Qwen subword を採用。
+        """
+        cs, ce = char_span
+        try:
+            enc = tokenizer(
+                text, add_special_tokens=False, return_offsets_mapping=True,
+            )
+        except (TypeError, ValueError):
+            # offset_mapping 非対応 tokenizer (テスト用 mock など)
+            return None
+        offsets = enc.get("offset_mapping")
+        if not offsets:
+            return None
+        for i, (s, e) in enumerate(offsets):
+            if s >= ce:
+                break
+            if e > cs:  # overlap
+                # generate ループで input_ids 全体に対応する hidden だけが取れる。
+                # 再 tokenize の結果が hidden の長さを超えるレアケースは弾く。
+                if i >= max_token_pos:
+                    return None
+                return i
+        return None
 
     def _sample(self, logits: torch.Tensor) -> torch.Tensor:
         cfg = self.config

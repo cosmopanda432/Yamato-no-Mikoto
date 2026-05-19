@@ -26,7 +26,7 @@ import tempfile
 import time
 from pathlib import Path
 
-TSX_BIN = "scripts/ts_tools/node_modules/.bin/tsx"
+TSX_BIN = "src/ts_tools/node_modules/.bin/tsx"
 
 
 def run_one(prompt: str, completion: str, tests: str, timeout: float) -> dict:

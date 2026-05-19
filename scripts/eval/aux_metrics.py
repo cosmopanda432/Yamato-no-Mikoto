@@ -19,7 +19,7 @@ import re
 import subprocess
 from pathlib import Path
 
-TSC_RUNNER = "scripts/ts_tools/dist/tsc_strict_runner.js"
+TSC_RUNNER = "src/ts_tools/dist/tsc_strict_runner.js"
 
 # completion 中の any 使用パターン
 ANY_PATTERNS = [

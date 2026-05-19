@@ -35,8 +35,10 @@ class MockTokenizer:
     def __len__(self) -> int:
         return max(self._s2i.values()) + 1
 
-    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+    def _encode_with_offsets(self, text: str) -> tuple[list[int], list[tuple[int, int]]]:
+        """encode + (start, end) offset を同時に返す"""
         ids: list[int] = []
+        offsets: list[tuple[int, int]] = []
         i = 0
         while i < len(text):
             matched = False
@@ -44,20 +46,36 @@ class MockTokenizer:
                 cand = text[i : i + length]
                 if cand in self._s2i:
                     ids.append(self._s2i[cand])
+                    offsets.append((i, i + length))
                     i += length
                     matched = True
                     break
             if not matched:
                 ids.append(self.UNK_ID)
+                offsets.append((i, i + 1))
                 i += 1
+        return ids, offsets
+
+    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+        ids, _ = self._encode_with_offsets(text)
         return ids
 
-    def __call__(self, text: str, return_tensors: str | None = None):
-        ids = self.encode(text)
+    def __call__(
+        self,
+        text: str,
+        return_tensors: str | None = None,
+        return_offsets_mapping: bool = False,
+        add_special_tokens: bool = False,
+    ):
+        ids, offsets = self._encode_with_offsets(text)
+        result: dict = {"input_ids": ids, "attention_mask": [1] * len(ids)}
+        if return_offsets_mapping:
+            result["offset_mapping"] = offsets
         if return_tensors == "pt":
             t = torch.tensor([ids], dtype=torch.long)
-            return {"input_ids": t, "attention_mask": torch.ones_like(t)}
-        return {"input_ids": ids, "attention_mask": [1] * len(ids)}
+            result["input_ids"] = t
+            result["attention_mask"] = torch.ones_like(t)
+        return result
 
     def decode(self, ids, skip_special_tokens: bool = True) -> str:
         out = []

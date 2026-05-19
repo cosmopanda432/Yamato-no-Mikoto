@@ -94,10 +94,19 @@ class KotodamaMaskBuilder:
     (続きは LM が学習済の分布で生成する)。
     """
 
-    def __init__(self, tokenizer, type_vocab: TypeVocabIndex):
+    def __init__(
+        self,
+        tokenizer,
+        type_vocab: TypeVocabIndex,
+        vocab_size: int | None = None,
+    ):
         self.tokenizer = tokenizer
         self.type_vocab = type_vocab
-        self.vocab_size: int = len(tokenizer)
+        # Qwen2.5 系では len(tokenizer) (151665) < model.config.vocab_size (152064 など、
+        # pad_to_multiple_of の影響) になることがある。マスクは logits の最終次元と一致
+        # させる必要があるため、呼び出し側で真の幅を渡せるようにする。未指定なら
+        # len(tokenizer)。
+        self.vocab_size: int = int(vocab_size) if vocab_size is not None else len(tokenizer)
         self._cache: dict[frozenset[int], torch.Tensor] = {}
 
     def build_mask_for_type_ids(self, type_ids: Iterable[int]) -> torch.Tensor:

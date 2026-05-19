@@ -177,7 +177,7 @@ class TestLogitMaskingPhysics:
         prompt = "function foo(x:"
         enc = tok(prompt, return_tensors="pt")
         out = backbone(input_ids=enc["input_ids"], output_hidden_states=True)
-        last_h = out.hidden_states[-1][:, -1:, :]
+        full_h = out.hidden_states[-1]
         last_logits = out.logits[:, -1, :].clone()
 
         before_finite = torch.isfinite(last_logits).all().item()
@@ -185,8 +185,9 @@ class TestLogitMaskingPhysics:
 
         masked, num_allowed, top_ids = decoder._maybe_apply_mask(
             text_buffer=prompt,
-            last_hidden=last_h,
+            full_hidden=full_h,
             last_logits=last_logits,
+            tokenizer=tok,
         )
         assert masked, "type-context で mask 適用されなかった"
         assert num_allowed > 0
