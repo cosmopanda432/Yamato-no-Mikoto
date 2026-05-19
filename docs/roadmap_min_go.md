@@ -58,9 +58,26 @@ Go の型システムは TS よりはるかに単純で、symbol-aware 制約が
 |---|---|
 | TS 版 3 mode ablation 結果 (A6000 bf16) | ✅ `data/eval/results/_a6000_bf16/` に保存 |
 | `src_min/` (TS 版) | 🟡 アーカイブ扱い、編集しない |
-| `src_min_go/` (Go 版) | 🔴 未着手 |
+| `docs/symbol_oracle_contract.md` (v0.1 仕様) | ✅ commit `e5ea0ba` |
+| `src_min_go/go_tools/` (symbol_oracle daemon PoC) | ✅ commit `e5ea0ba`、10/10 tests pass |
+| `src_min_go/kojiki_lm/` (Python decoder + 言霊) | 🔴 未着手 |
 | Stage 2 `custom_heads.pt` (TS 特化) | 🟡 流用しない (vocab/distribution 共に不整合) |
-| Go 用 baseline | 🔴 未測定 |
+| **M0 Go 用 baseline** (humaneval-go × 3 seed) | ✅ **確定 (下表)** |
+
+### M0 baseline 確定値 (3 seed × 154 問、bare Qwen2.5-Coder-7B-Instruct, 4bit)
+
+| 指標 | mean | 95% CI | 改善余地 |
+|---|---|---|---|
+| `go build` 成功率 | **100.00%** | [100, 100] | 🚫 天井 |
+| undefined-symbol 出現率 (build 失敗のみ集計) | **0.00%** | [0, 0] | 🚫 既に完璧 |
+| `go vet` clean 率 | **45.02%** | [43.16, 46.88] | ✅ 大 |
+| `go test` pass@1 | **28.14%** | [25.67, 30.60] | ✅ 大 |
+
+**重大な発見** (TS 版との対比):
+1. **go build = 100% で天井** — Go コンパイラは TS の strict より型推論が寛容 (`x := f()` で型推論)、生成コードはほぼ build を通る。**PRIMARY を `go build` にしたら改善計測不能**
+2. **undefined rate = 0%** — Go では「型ハルシ抑制」という TS 版で重要だった指標が baseline で既に完璧。Qwen は Go の型を正しく扱える
+3. **pass@1 = 28%** — TS の baseline 75% よりはるかに低い。Qwen は **Go コード生成自体が苦手** (または HumanEval-Go が難しい)。Win Condition の本丸は **機能的正しさ (pass@1)** に変わる
+4. **3 seed の SD < 1pp** — 各指標の seed 間バラつきは小さく、N=154 でも seed 平均で十分有意性が出る
 
 ## モジュール構成 (予定)
 
@@ -89,25 +106,24 @@ src_min_go/
 
 ## マイルストーン
 
-### M0 — baseline 測定 (humaneval-go × 3 seed)
+### M0 — baseline 測定 (humaneval-go × 3 seed) ✅
 
-bare Qwen2.5-Coder-7B-Instruct で humaneval-go を 3 seed (温度 0.2) 生成し、
-**Win Condition の baseline 数値を確定** する。実装は不要、評価インフラのみ。
-
-**Done 条件**
-- humaneval-go 159 問 × 3 seed = 477 generation 完了
-- 各 seed で:
-  - pass@1 (`go test`)
-  - go build 成功率
-  - go vet clean 率
-  - undefined symbol (`undefined: foo` 等) 出現サンプル率
-- 3 seed 平均 ± 95% CI を [data/eval/results/_baselines/](../data/eval/results/_baselines/) に保存
-- **この数値を見てから** M6 の Win Condition 閾値を確定する
+bare Qwen2.5-Coder-7B-Instruct で humaneval-go (154 問) を 3 seed (温度 0.2) 生成。
+ローカル RTX 3060 4bit、avg ~9.3s/q、total 71 分で完了。
 
 **実装**
-- `scripts/data/download_humaneval_go.py` — MultiPL-E `humaneval-go` を取得
-- `scripts/eval/run_baseline_go.py` — bare Qwen で生成 (seed 引数あり)
-- `scripts/eval/go_eval.py` — `go build` / `go vet` / `go test` の wrapper、JSON 集計
+- ✅ `scripts/eval/run_baseline_go.py` — `kojiki_lm` 依存ゼロの最小 vanilla 生成 (~140 LOC)
+- ✅ `scripts/eval/go_eval.py` — `go build` / `go vet` / `go test` ラッパー (~200 LOC)。
+  各サンプル独立 tempdir + `go.mod`、`undefined-symbol` 判定は **build 失敗時のみ集計**
+  (build OK 時の `imported and not used` 等の警告は型ハルシではないため除外)
+- ✅ `data/eval/results/_baselines/humaneval-go.baseline.aggregate.json` に 3 seed 集計
+  (mean / sd / 95% CI)
+
+**Done 条件 (全て満たした)**
+- ✅ 154 問 × 3 seed = 462 generations
+- ✅ 4 指標 (build / undefined / vet / test) × 3 seed の summary JSON
+- ✅ 集計値が `data/eval/results/_baselines/` に保存済
+- ✅ **下記 M6 の Win Condition 閾値を確定** (下表参照)
 
 ---
 
@@ -191,17 +207,21 @@ L3↔L5 境界を型で強制。Evaluator は v1 では **TS 版から fork し�
   - `vanilla`: 言霊 OFF + Firewall OFF (= baseline)
 - 各 mode で 3 seed、平均 ± 95% CI
 
-**評価指標 (重要度順)**
+**評価指標 (重要度順、M0 baseline 結果を踏まえて再設計)**
 
-| 順位 | 指標 | 計算方法 | Win 基準 |
-|---|---|---|---|
-| **PRIMARY** | go build 成功率 | `go build ./...` exit code = 0 のサンプル率 | baseline +5pp |
-| **SECONDARY** | undefined-symbol 出現率 | `undefined: \w+` / `package \w+ is not in std` のエラー出るサンプル率 | baseline ×0.5 |
-| TERTIARY | go vet clean 率 | `go vet ./...` 警告ゼロ率 | (情報) |
-| TERTIARY | pass@1 | `go test` exit code = 0 のサンプル率 | (情報) |
+| 順位 | 指標 | baseline mean (95% CI) | Win 基準 | 計算方法 |
+|---|---|---|---|---|
+| **PRIMARY** | **go test pass@1** | 28.14% [25.67, 30.60] | **≥ 33.14%** (baseline +5pp) | `go test` exit code = 0 のサンプル率 |
+| **SECONDARY** | **go vet clean 率** | 45.02% [43.16, 46.88] | **≥ 50.02%** (baseline +5pp) | `go vet ./...` 警告ゼロ率 |
+| INDICATOR | go build 成功率 | 100.00% (天井) | — | コンパイル成否、Go の寛容性で baseline で既に天井 |
+| INDICATOR | undefined rate | 0.00% (build 失敗時のみ集計) | — | TS 版の TS2304 相当だが Go では baseline で発生せず |
 
-PRIMARY が **go vet ではなく go build** であることを強調する: go vet は bug pattern
-検出で型整合性は見ない。型ハルシ抑制を測る指標は **コンパイル成否** が正しい。
+**設計判断の根拠**: M0 で当初想定の PRIMARY (`go build`) が baseline 100% で天井に
+張り付き、また SECONDARY (undefined rate) も build_ok 時の `imported and not used`
+警告を除外すれば baseline 0% と判明した。Go では「型ハルシ抑制」は既に完璧で、
+**改善対象は機能的正しさ (pass@1) と品質 (vet)** に確定。Win Condition も「+5pp」
+の同じ閾値を使うが、PRIMARY が pass@1 に変わったことで TS 版の「コンパイル整合性」
+重視から「実装の正しさ」重視に意味も変わる。
 
 **Done 条件**
 - 4 mode × 3 seed = 12 ラン
