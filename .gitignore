@@ -28,3 +28,6 @@ node_modules/
 *.key
 *.pem
 src/ts_tools/dist/
+
+# Go build outputs
+src_min_go/go_tools/bin/
