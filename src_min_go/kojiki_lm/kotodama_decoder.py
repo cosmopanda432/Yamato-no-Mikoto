@@ -131,15 +131,36 @@ class KotodamaDecoder:
 
         eos_id = getattr(tokenizer, "eos_token_id", None)
 
+        # KV cache を使った decode。初回は prompt 全体を forward、2 step 目以降は
+        # 1 token のみを past_key_values と合わせて forward する。これで全 sequence
+        # 再計算 (O(L^2)) を避けて transformers.generate と同じ速度になる。
+        # TS 版は TypeHead に hidden_states[-1] を渡す必要があり use_cache=False
+        # だったが、Go 版は oracle が AST 側で scope を取るため hidden 不要、
+        # use_cache=True が安全に使える。
+        #
+        # MockBackbone のような past_key_values を返さない backbone でも動くよう、
+        # cumulative_input_ids を fallback 用に保持する。
+        past_key_values = None
+        cumulative_input_ids = input_ids
+
         for step in range(cfg.max_new_tokens):
+            if past_key_values is None:
+                # 初回 or cache 非対応 backbone: 累積した全 token を流す
+                step_input_ids = cumulative_input_ids
+            else:
+                # cache モード: 直前生成の 1 token のみ
+                step_input_ids = next_tok
+
             outputs = backbone(
-                input_ids=input_ids,
+                input_ids=step_input_ids,
                 attention_mask=attention_mask,
+                past_key_values=past_key_values,
                 output_hidden_states=False,
-                use_cache=False,
+                use_cache=True,
                 return_dict=True,
             )
             last_logits = outputs.logits[:, -1, :]   # [B, V]
+            past_key_values = getattr(outputs, "past_key_values", None)
 
             bias_applied, scope_kind, num_allowed, sample_types = self._maybe_apply_bias(
                 text_buffer=text_buffer,
@@ -151,7 +172,9 @@ class KotodamaDecoder:
             tok_id = int(next_tok.item())
             generated_ids.append(tok_id)
 
-            input_ids = torch.cat([input_ids, next_tok], dim=-1)
+            # cache 非対応 backbone のために cumulative を伸ばしておく。
+            # 実モデル (Qwen2) では past_key_values が non-None なので未使用。
+            cumulative_input_ids = torch.cat([cumulative_input_ids, next_tok], dim=-1)
             attention_mask = torch.cat(
                 [attention_mask, torch.ones_like(next_tok)], dim=-1
             )
