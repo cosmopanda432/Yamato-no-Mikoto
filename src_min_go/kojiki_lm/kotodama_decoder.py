@@ -102,6 +102,8 @@ class KotodamaResult:
     final_verdict: L5ToL3Verdict | None = None
     steps: list[StepLog] = field(default_factory=list)
     halted_early: bool = False
+    stopped_at_stop_token: bool = False
+    """修正 H (2026-05-21): generation 中に stop_token を検出して early-stop した"""
     prompt_id: str = ""
 
     @property
@@ -149,7 +151,17 @@ class KotodamaDecoder:
         tokenizer: Any,
         prompt_text: str,
         prompt_id: str | None = None,
+        stop_tokens: tuple[str, ...] | list[str] = (),
     ) -> KotodamaResult:
+        """prompt_text から最大 cfg.max_new_tokens token 生成する。
+
+        stop_tokens: 生成中に text_buffer の **生成部分** にこれらが現れたら
+            early-stop する。post-process の truncate と同じセマンティクス。
+            修正 H (2026-05-21): max_new_tokens 上限まで生成しきってから truncate
+            する旧仕様だと、function body 完了後の test driver 領域でも bias 計算が
+            走り続ける問題があった。token-level で stop することで生成時間と
+            無駄な oracle 呼び出しを削減する。
+        """
         cfg = self.config
         pid = prompt_id or uuid.uuid4().hex[:8]
 
@@ -176,10 +188,16 @@ class KotodamaDecoder:
             self._sampling_rng.manual_seed(int(cfg.sampling_seed))
 
         text_buffer = prompt_text
+        # 修正 H: 生成部分のみで stop_tokens を検索するため、prompt 長を保持
+        prompt_len = len(prompt_text)
+        # 空文字列の stop_token は意味がないので除外 (常に match して即停止する)
+        active_stop_tokens = tuple(st for st in stop_tokens if st)
+
         generated_ids: list[int] = []
         steps: list[StepLog] = []
         final_verdict: L5ToL3Verdict | None = None
         halted = False
+        stopped_at_stop = False
 
         eos_id = getattr(tokenizer, "eos_token_id", None)
 
@@ -272,6 +290,13 @@ class KotodamaDecoder:
             # byte-identical 性質に必要な fix)
             if eos_id is not None and tok_id == eos_id:
                 break
+            # 修正 H: 生成部分に stop_token が含まれたら早期終了
+            # (生成部分 = text_buffer[prompt_len:]、prompt 自体の偽 match を防ぐ)
+            if active_stop_tokens:
+                generated_text = text_buffer[prompt_len:]
+                if any(st in generated_text for st in active_stop_tokens):
+                    stopped_at_stop = True
+                    break
 
         return KotodamaResult(
             text=tokenizer.decode(generated_ids, skip_special_tokens=True),
@@ -279,6 +304,7 @@ class KotodamaDecoder:
             final_verdict=final_verdict,
             steps=steps,
             halted_early=halted,
+            stopped_at_stop_token=stopped_at_stop,
             prompt_id=pid,
         )
 

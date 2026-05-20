@@ -25,6 +25,17 @@ func TestQuery_BuiltinTypesAlwaysPresent(t *testing.T) {
 	}
 }
 
+// 2026-05-21 修正 G: 型 composition keyword も Types に入ること。
+// `[]interface{}` / `map[K]V` / `chan T` / `[]func(...)` の next token として頻出する。
+func TestQuery_CompositionKeywordsPresent(t *testing.T) {
+	r := Query("", 0)
+	for _, want := range []string{"interface", "struct", "map", "chan", "func"} {
+		if !contains(r.Types, want) {
+			t.Errorf("missing composition keyword %q in %v", want, r.Types)
+		}
+	}
+}
+
 // 関数引数の途中。`a` は宣言済み、`b` の型位置に居る。
 //
 //	package main

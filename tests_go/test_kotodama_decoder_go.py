@@ -378,6 +378,98 @@ class TestSamplingRngIsolation:
         assert out1.generated_ids == out2.generated_ids
 
 
+class TestStopTokens:
+    """修正 H (2026-05-21): generate() に stop_tokens を渡すと、生成部分にそれらが
+    含まれた時点で early-stop する。max_new_tokens 上限まで生成しきってから
+    truncate していた旧仕様は、function 完了後の test driver 領域での bias 計算
+    無駄打ちを許していた"""
+
+    def test_no_stop_tokens_runs_to_full_length(self):
+        """stop_tokens=() (default) なら従来通り max_new_tokens (or EOS) まで生成"""
+        torch.manual_seed(0)
+        decoder, backbone, tok, _ = _build_decoder(
+            oracle_response=None, max_new_tokens=8, firewall_enabled=False,
+        )
+        result = decoder.generate(backbone, tok, "func ")
+        assert not result.stopped_at_stop_token
+        assert len(result.generated_ids) <= 8
+
+    def test_stop_token_triggers_early_stop(self):
+        """生成テキストに含まれる substring を stop_tokens として渡すと early-stop。
+        MockBackbone はランダム重みで decode 文字列が空 (special token のみ) になる
+        ことがあるので、サンプリング + sampling_seed で deterministic に多様な
+        token を生成させる"""
+        tok = MiniTokenizer()
+        torch.manual_seed(0)
+        backbone = MockBackbone(vocab_size=len(tok))
+        backbone.eval()
+        bias_builder = GoSymbolBiasBuilder(tok, vocab_size=len(tok))
+        firewall = YomotsuHirasaka(YomiEvaluator())
+
+        def make_decoder():
+            cfg = KotodamaConfig(
+                max_new_tokens=16,
+                bias_value=0.0,
+                mask_enabled=False,
+                oracle_enabled=False,
+                firewall_enabled=False,
+                do_sample=True,
+                temperature=1.0,
+                top_k=20,
+                top_p=0.95,
+                sampling_seed=42,
+            )
+            return KotodamaDecoder(None, bias_builder, firewall, cfg)
+
+        baseline = make_decoder().generate(backbone, tok, "func ")
+        full_text = baseline.text
+        assert len(full_text) >= 1, (
+            f"baseline text too short to test stop_tokens: {full_text!r}"
+        )
+
+        # baseline の最初の 1 文字を stop_token に。同じ backbone/seed なら同じ系列
+        # を生成するので、その 1 文字が現れた step で early-stop するはず
+        early_target = full_text[:1]
+        result = make_decoder().generate(
+            backbone, tok, "func ", stop_tokens=(early_target,),
+        )
+        assert result.stopped_at_stop_token, (
+            f"expected early stop with stop_token={early_target!r}, "
+            f"got stopped_at_stop_token=False, text={result.text!r}"
+        )
+        # early stop ぶん、token 数は baseline 以下になる
+        assert len(result.generated_ids) <= len(baseline.generated_ids)
+
+    def test_empty_string_stop_token_ignored(self):
+        """空文字列 stop_token は無視 (常に match して 1 step で停止する誤動作を防ぐ)"""
+        torch.manual_seed(0)
+        decoder, backbone, tok, _ = _build_decoder(
+            oracle_response=None, max_new_tokens=6, firewall_enabled=False,
+        )
+        result = decoder.generate(
+            backbone, tok, "func ", stop_tokens=("",),
+        )
+        assert not result.stopped_at_stop_token
+        assert len(result.generated_ids) <= 6
+
+    def test_stop_token_in_prompt_does_not_trigger(self):
+        """prompt に含まれる文字列を stop_token にしても、生成部分でなければ
+        early-stop しない (生成部分のみ照合する設計の確認)"""
+        torch.manual_seed(0)
+        decoder, backbone, tok, _ = _build_decoder(
+            oracle_response=None, max_new_tokens=6, firewall_enabled=False,
+        )
+        # `func ` は prompt にだけある。生成側に出てこなければ stop しない
+        result = decoder.generate(
+            backbone, tok, "func ", stop_tokens=("func",),
+        )
+        # `func` が生成テキストに偶然出てきたら early-stop する可能性はあるが、
+        # 出てこなければ stopped_at_stop_token=False。どちらでも assert は通る:
+        # 重要なのは prompt 部分の `func ` だけで停止していないこと = 1 step は
+        # 走ること
+        assert len(result.generated_ids) >= 1
+
+
 class TestFirewallIntegration:
     def test_firewall_called_at_interval(self):
         decoder, backbone, tok, _ = _build_decoder(

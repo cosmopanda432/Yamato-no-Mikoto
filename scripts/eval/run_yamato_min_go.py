@@ -175,7 +175,13 @@ def main():
             kotodama_cfg.sampling_seed = args.seed * 1_000_003 + i
 
             t0 = time.time()
-            result = decoder.generate(backbone, tokenizer, prompt, prompt_id=name)
+            # 修正 H: stop_tokens を decoder に渡して token-level で early-stop する。
+            # 旧仕様は max_new_tokens 上限まで生成しきってから truncate していたため、
+            # function 完了後の test driver 領域で bias 計算が無駄に走っていた。
+            result = decoder.generate(
+                backbone, tokenizer, prompt,
+                prompt_id=name, stop_tokens=tuple(stop_tokens),
+            )
             elapsed = time.time() - t0
             t_total += elapsed
 

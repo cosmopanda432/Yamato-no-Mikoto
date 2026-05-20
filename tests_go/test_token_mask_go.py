@@ -51,6 +51,12 @@ VOCAB = {
     "MyStruct": 20, " MyStruct": 21,
     "a": 30, " a": 31,
     "b": 32, " b": 33,
+    # 修正 G (2026-05-21): 型 composition keyword
+    "interface": 40, " interface": 41,
+    "struct": 42, " struct": 43,
+    "map": 44, " map": 45,
+    "chan": 46, " chan": 47,
+    "func": 48, " func": 49,
     "</s>": 99,
 }
 
@@ -131,6 +137,26 @@ def test_cache_returns_same_tensor():
     a = builder.build_bias_for_symbols(types=("int",), vars_=(), scope_kind="func_arg")
     b = builder.build_bias_for_symbols(types=("int",), vars_=(), scope_kind="func_arg")
     assert a is b  # 同じ key → cache hit
+
+
+def test_composition_keywords_get_bias():
+    """修正 G (2026-05-21): `interface` / `struct` / `map` / `chan` / `func` が
+    Types として渡された場合に bias が乗ること。mbpp-go full run で
+    `[]interface{}` の `interface` が allowed に含まれず bias=0 だった発見が動機"""
+    tok = MiniTokenizer(VOCAB)
+    builder = GoSymbolBiasBuilder(tok, vocab_size=100)
+    bias = builder.build_bias_for_symbols(
+        types=("int", "interface", "struct", "map", "chan", "func"),
+        vars_=(),
+        scope_kind="slice_elem",
+        config=BiasConfig(bias_value=2.0, include_space_prefix=True),
+    )
+    # int / interface / struct / map / chan / func それぞれの bare 形と空白前置形
+    expected_ids = (10, 11, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49)
+    for tid in expected_ids:
+        assert bias[tid].item() == 2.0, (
+            f"expected bias=2.0 at token {tid}, got {bias[tid].item()}"
+        )
 
 
 def test_unknown_symbol_does_not_crash():

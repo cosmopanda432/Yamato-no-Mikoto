@@ -59,8 +59,14 @@ func Query(prompt string, cursor int) QueryResult {
 		src = prompt[:cursor]
 	}
 
+	// Types = builtin (int, string, ...) ∪ CompositionKeywords (interface, struct, ...)。
+	// 後者は named type ではないが、型 position の next token として頻出するため
+	// bias 対象に含める (2026-05-21 修正 G)。
+	types := make([]string, 0, len(BuiltinTypes)+len(CompositionKeywords))
+	types = append(types, BuiltinTypes...)
+	types = append(types, CompositionKeywords...)
 	result := QueryResult{
-		Types:     append([]string{}, BuiltinTypes...),
+		Types:     types,
 		Vars:      []string{},
 		ScopeKind: ScopeUnknown,
 		ASTOK:     false,
