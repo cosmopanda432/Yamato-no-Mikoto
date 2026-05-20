@@ -29,6 +29,15 @@ var (
 	// (Go では `<` を「ジェネリック」と誤認することはないので影響は限定的だが
 	//  decode 時のロバスト性のため明示する。)
 	reInequalityTail = regexp.MustCompile(`[a-zA-Z0-9_)\]]\s*[<>]=?\s*$`)
+
+	// 2026-05-21 追加: 「難所」型位置の regex 検出 (Python 側 kotodama_context.py と同期)
+	reChanElem        = regexp.MustCompile(`\bchan\s*$|<-chan\s*$|\bchan<-\s*$`)
+	reMapKey          = regexp.MustCompile(`\bmap\[\s*$`)
+	reMapVal          = regexp.MustCompile(`\bmap\[\w+\]\s*$|\bmap\[\[\]\w+\]\s*$`)
+	reSliceElem       = regexp.MustCompile(`(?:^|[^\w\)])\[\]\s*$|\b\[\d+\]\s*$`)
+	reInterfaceMethod = regexp.MustCompile(`\binterface\s*\{[^}]*\)\s*$`)
+	reTypeAssert      = regexp.MustCompile(`\)\s*\.\(\s*$|\w\.\(\s*$`)
+	reStructField     = regexp.MustCompile(`\bstruct\s*\{[^}]*\b\w+\s*$`)
 )
 
 // Query は prompt[:cursor] を Go source として解析し、その位置で参照可能な
@@ -246,15 +255,43 @@ func collectFuncScope(fd *ast.FuncDecl, cursor token.Pos, result *QueryResult) {
 }
 
 // detectScopeKind は cursor がどの構文位置にあるかを判定する。
-// 戦略: 偽陽性ガード (不等式の末尾) → AST ベース判定 → 末尾 regex の順で fallback。
-// AST は補完依存で信頼度が中程度なため、最終手段として regex を併用する。
+// 戦略: 偽陽性ガード (不等式の末尾) → 難所 regex → AST ベース → 既存 regex fallback。
+//
+// 2026-05-21 更新: mbpp-go ablation で func_arg / func_return では LM がほぼ確実に
+// 正解を出すため bias 無意味と判明。難所 (複合型 elem 位置) を**先に**判定し、
+// func_arg / func_return より優先する。
 func detectScopeKind(fd *ast.FuncDecl, cursor token.Pos, src string) string {
 	// 偽陽性ガード: 末尾が比較演算 (`<`, `>`, `<=`, `>=`) なら絶対に型 context ではない
 	if reInequalityTail.MatchString(src) {
 		return ScopeUnknown
 	}
 
+	// 難所 regex を先に判定 (より具体的なパターンが優先)
+	if reChanElem.MatchString(src) {
+		return ScopeChanElem
+	}
+	if reMapKey.MatchString(src) {
+		return ScopeMapKey
+	}
+	if reMapVal.MatchString(src) {
+		return ScopeMapVal
+	}
+	if reSliceElem.MatchString(src) {
+		return ScopeSliceElem
+	}
+	if reInterfaceMethod.MatchString(src) {
+		return ScopeInterfaceMethod
+	}
+	if reTypeAssert.MatchString(src) {
+		return ScopeTypeAssert
+	}
+	if reStructField.MatchString(src) {
+		return ScopeStructField
+	}
+
 	// AST ベース: fd.Type.Params の `(...)` 内に cursor があるか
+	// (Python 側 filter は func_arg を除外しているので通常ここには来ないが、
+	//  defense-in-depth として残す。届いた場合は bias は無害だが効果も期待しない)
 	if fd.Type.Params != nil {
 		op, cl := fd.Type.Params.Opening, fd.Type.Params.Closing
 		if op != token.NoPos && cursor > op && cursor <= cl {

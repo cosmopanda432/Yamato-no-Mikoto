@@ -22,6 +22,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import torch
+from transformers.generation.logits_process import (
+    LogitsProcessorList,
+    TemperatureLogitsWarper,
+    TopKLogitsWarper,
+    TopPLogitsWarper,
+)
 
 from .go_symbol_oracle import OracleClient, OracleResult
 from .kotodama_context import looks_like_type_position
@@ -61,6 +67,18 @@ class KotodamaConfig:
 
     oracle_enabled: bool = True
     """False で oracle 呼ばずに bias 加算スキップ (debug 用)"""
+
+    sampling_seed: int | None = None
+    """サンプリング専用 Generator の seed。None で global RNG を使う。
+
+    指定するとデコード中の `tokenizer.decode` / `firewall.send` / Python GC 等が
+    global CUDA RNG state を消費しても、`torch.multinomial` は影響を受けない。
+    これにより `firewall_enabled` toggle で出力が byte-identical になる。
+
+    複数 prompt を 1 つの decoder で回す場合、prompt ごとに seed を派生させる
+    必要がある (全 prompt で同じ seed だと同じ系列になる)。呼び出し側 (例:
+    `run_yamato_min_go.py`) で `args.seed * P + i` のような派生を行う。
+    """
 
 
 @dataclass
@@ -105,6 +123,24 @@ class KotodamaDecoder:
         self.bias_builder = bias_builder
         self.firewall = firewall
         self.config = config or KotodamaConfig()
+        # transformers の model.generate と byte-equivalent な sampling を実現するため、
+        # 公式 LogitsWarper を直接使う。手書きで top_p を実装すると float32 累積加算の
+        # 丸め誤差 (例: 0.8+0.1+0.05 = 0.950000047 > 0.95) で off-by-1 になる。
+        self._warpers: LogitsProcessorList | None = None
+        # 修正 D: サンプリング専用 RNG (`generate()` 内で seed 指定時に初期化)。
+        # `firewall.send` 等のサイドチャネルから sampler を物理的に隔離する。
+        self._sampling_rng: torch.Generator | None = None
+
+    def _build_warpers(self) -> LogitsProcessorList:
+        cfg = self.config
+        warpers = LogitsProcessorList()
+        if cfg.temperature > 0 and cfg.temperature != 1.0:
+            warpers.append(TemperatureLogitsWarper(cfg.temperature))
+        if cfg.top_k > 0:
+            warpers.append(TopKLogitsWarper(top_k=cfg.top_k, min_tokens_to_keep=1))
+        if 0.0 < cfg.top_p < 1.0:
+            warpers.append(TopPLogitsWarper(top_p=cfg.top_p, min_tokens_to_keep=1))
+        return warpers
 
     @torch.no_grad()
     def generate(
@@ -126,6 +162,18 @@ class KotodamaDecoder:
         device = self._infer_device(backbone, fallback=input_ids.device)
         input_ids = input_ids.to(device)
         attention_mask = attention_mask.to(device)
+
+        # 修正 D: prompt 単位でサンプリング専用 Generator を初期化。
+        # これによりデコード中の `tokenizer.decode` / `firewall.send` / Python GC 等が
+        # global (CUDA) RNG state を消費しても、`torch.multinomial` は影響を受けず、
+        # `firewall_enabled` toggle で出力が byte-identical になる。
+        if cfg.sampling_seed is not None:
+            if (
+                self._sampling_rng is None
+                or self._sampling_rng.device != device
+            ):
+                self._sampling_rng = torch.Generator(device=device)
+            self._sampling_rng.manual_seed(int(cfg.sampling_seed))
 
         text_buffer = prompt_text
         generated_ids: list[int] = []
@@ -172,7 +220,7 @@ class KotodamaDecoder:
                 session_id=pid,
             )
 
-            next_tok = self._sample(last_logits)
+            next_tok = self._sample(last_logits, cumulative_input_ids)
             tok_id = int(next_tok.item())
             generated_ids.append(tok_id)
 
@@ -211,15 +259,17 @@ class KotodamaDecoder:
                 step_log.verdict = verdict.verdict.value
                 step_log.v_score = verdict.v_score
 
-                steps.append(step_log)
-
                 if verdict.verdict is Verdict.HALT:
                     halted = True
-                    break
-                continue
 
             steps.append(step_log)
 
+            if halted:
+                break
+            # EOS は firewall check の有無に依らず常に停止条件として評価する。
+            # (旧コードは check step で `continue` し EOS を見逃していた。これは
+            # `firewall_enabled` toggle で出力が分岐する原因の一つ — 修正 D の
+            # byte-identical 性質に必要な fix)
             if eos_id is not None and tok_id == eos_id:
                 break
 
@@ -275,51 +325,48 @@ class KotodamaDecoder:
             return False, result.scope_kind, 0, ()
 
         bias_dev = bias.to(last_logits.device, dtype=last_logits.dtype)
+        # 診断: bias 加算前後で top-1 が変わったか直接観測 (2026-05-20 attribution 調査)
+        pre_top1 = int(last_logits.argmax(dim=-1).item())
+        pre_top1_logit = float(last_logits[..., pre_top1].item())
         # last_logits は [B, V]、bias は [V]。ブロードキャスト加算
         last_logits.add_(bias_dev.unsqueeze(0))
+        post_top1 = int(last_logits.argmax(dim=-1).item())
+        post_top1_logit = float(last_logits[..., post_top1].item())
+        bias_at_pre_top1 = float(bias_dev[pre_top1].item())
+        changed = (pre_top1 != post_top1)
+        logger.info(
+            "BIAS_DIAG scope=%s n_allowed=%d  pre_top1=%d (logit=%.3f, bias=%.2f)  "
+            "post_top1=%d (logit=%.3f)  changed=%s",
+            result.scope_kind, num_allowed,
+            pre_top1, pre_top1_logit, bias_at_pre_top1,
+            post_top1, post_top1_logit, changed,
+        )
 
         return True, result.scope_kind, num_allowed, result.types[:5]
 
-    def _sample(self, logits: torch.Tensor) -> torch.Tensor:
-        """transformers.generate の LogitsProcessor pipeline と等価:
-        TemperatureLogitsWarper → TopKLogitsWarper(50) → TopPLogitsWarper(0.95) → multinomial.
+    def _sample(self, logits: torch.Tensor, input_ids: torch.Tensor) -> torch.Tensor:
+        """transformers.generate と byte-equivalent な sampling。
 
-        以前は temperature だけで全 vocab から multinomial していたため、
-        run_baseline_go.py (model.generate 経由) と異なる確率過程となり、
-        seed 一致でも出力が大きく分岐していた (2026-05-20 mbpp-go ablation で発覚)。
+        手書きの top_k/top_p を捨て、`transformers.generation.logits_process` の
+        公式 Warper をそのまま使う。float32 累積加算による off-by-1 を含む全ての
+        edge case が transformers と完全一致する。
+
+        input_ids は repetition_penalty 等が使うのでパスする (現状の TopK/TopP は
+        無視するが API 上要る)。
         """
         cfg = self.config
         if not (cfg.do_sample and cfg.temperature > 0):
             return logits.argmax(dim=-1, keepdim=True)
 
-        # logits を破壊的に変更しないよう clone してから処理
-        logits = logits.clone() / cfg.temperature
+        if self._warpers is None:
+            self._warpers = self._build_warpers()
 
-        # top-k filter: 上位 k 個以外を -inf
-        if cfg.top_k > 0 and cfg.top_k < logits.size(-1):
-            kth_vals, _ = torch.topk(logits, cfg.top_k, dim=-1)
-            kth_threshold = kth_vals[..., -1, None]
-            logits = torch.where(logits < kth_threshold,
-                                 torch.full_like(logits, float("-inf")),
-                                 logits)
-
-        # top-p (nucleus) filter: 累積確率 top_p を超えた tail を -inf
-        if 0.0 < cfg.top_p < 1.0:
-            sorted_logits, sorted_idx = torch.sort(logits, descending=True, dim=-1)
-            cum_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
-            # 「累積が top_p を超えた」位置は捨てるが、最初の超え位置までは残す
-            sorted_remove = cum_probs > cfg.top_p
-            sorted_remove[..., 1:] = sorted_remove[..., :-1].clone()
-            sorted_remove[..., 0] = False
-            # sorted_idx で元位置に戻す
-            remove_mask = torch.zeros_like(sorted_remove)
-            remove_mask.scatter_(-1, sorted_idx, sorted_remove)
-            logits = torch.where(remove_mask,
-                                 torch.full_like(logits, float("-inf")),
-                                 logits)
-
-        probs = torch.softmax(logits, dim=-1)
-        return torch.multinomial(probs, 1)
+        # LogitsProcessorList(__call__) は (input_ids, scores) を取って scores を返す
+        scores = self._warpers(input_ids, logits)
+        probs = torch.softmax(scores, dim=-1)
+        # 修正 D: 専用 Generator があればそれを使い、global RNG から隔離する。
+        # None なら従来通り global RNG (= torch.manual_seed の対象)。
+        return torch.multinomial(probs, 1, generator=self._sampling_rng)
 
     @staticmethod
     def _infer_device(backbone: Any, fallback: torch.device) -> torch.device:

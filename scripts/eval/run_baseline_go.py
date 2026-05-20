@@ -128,6 +128,15 @@ def main():
         prompt = row["prompt"]
         stop_tokens = list(row.get("stop_tokens") or [])
 
+        # 修正 D 補助: prompt 単位で manual_seed を呼ぶ。run_yamato_min_go.py 側で
+        # KotodamaConfig.sampling_seed = args.seed * 1_000_003 + i としているのと
+        # 同じ式。これにより両 runner で「同一 prompt は同一 sampling RNG seed」
+        # になり、baseline ↔ vanilla の sampler 等価性 (修正 A) を fair に比較できる。
+        per_prompt_seed = args.seed * 1_000_003 + i
+        torch.manual_seed(per_prompt_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(per_prompt_seed)
+
         t0 = time.time()
         inputs = tokenizer(prompt, return_tensors="pt").to(device)
         with torch.no_grad():

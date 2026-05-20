@@ -110,6 +110,10 @@ run_baseline_seed() {
     fi
 
     log "baseline seed=$seed: generating to $gen_dir"
+    local limit_flag=()
+    if [[ -n "${LIMIT:-}" ]]; then
+        limit_flag=(--limit "$LIMIT")
+    fi
     python3 scripts/eval/run_baseline_go.py \
         --input "$PARQUET" \
         --out-dir "$gen_dir" \
@@ -118,6 +122,7 @@ run_baseline_seed() {
         --max-new-tokens "$MAX_NEW_TOKENS" \
         --temperature "$TEMPERATURE" \
         --seed "$seed" \
+        "${limit_flag[@]}" \
         $( [[ "$SKIP_EXISTING" == "1" ]] && echo --skip-existing )
 
     log "baseline seed=$seed: evaluating with go_eval.py"
@@ -250,6 +255,26 @@ cmd_smoke() {
     log "smoke complete. inspect data/eval/results/${DATASET}.yamato_min_go.vanilla.seed0/_summary.json"
 }
 
+# 修正 D (Generator 分離) の機構整合性スモーク
+# vanilla / no-kotodama × seed 0 × N=10 を回し、diff_smoke_outputs.py で
+# byte-identical 率を集計する。
+# 期待:
+#   vanilla ↔ no-kotodama : 10/10 完全一致 (修正 D: Generator 分離で firewall 副作用なし)
+#
+# 注: baseline は再生成しない (ローカルに保存済み = data/eval/results/<dataset>.baseline.seed*/)。
+#     修正 A (sampler 等価) を再確認したい場合は別途 baseline を `cmd_baseline` で生成すること。
+cmd_smoke_fix_d() {
+    local seed="${1:-0}"
+    log "=== smoke-fix-d: vanilla + no-kotodama × seed $seed × N=10 (修正 D 検証) ==="
+    LIMIT=10 SKIP_EXISTING=0 run_yamato_mode_seed vanilla "$seed"
+    LIMIT=10 SKIP_EXISTING=0 run_yamato_mode_seed no-kotodama "$seed"
+
+    log "comparing outputs (vanilla vs no-kotodama)..."
+    python3 scripts/eval/diff_smoke_outputs.py \
+        --vanilla  "data/eval/generated/${DATASET}.yamato_min_go.vanilla.seed${seed}" \
+        --no-kotodama "data/eval/generated/${DATASET}.yamato_min_go.no-kotodama.seed${seed}"
+}
+
 cmd_baseline() {
     local seed="${1:?seed required, e.g. 0}"
     log "=== baseline: seed $seed × 154 問 ==="
@@ -258,8 +283,11 @@ cmd_baseline() {
 
 cmd_pilot() {
     local seed="${1:-0}"
-    log "=== pilot: 4 mode × seed $seed × 154 問 (baseline + 4 ablation, then judge full) ==="
-    run_baseline_seed "$seed"
+    log "=== pilot: 4 ablation mode × seed $seed (then judge against saved baseline) ==="
+    # baseline は再生成しない (ローカル保存済み)。judge_mode が
+    # data/eval/results/${DATASET}.baseline.seed${seed}/_summary.json を参照するので、
+    # pod で走らせる場合は事前に scp で baseline summary + per-prompt JSON を転送のこと。
+    # baseline を更新したい場合は明示的に `bash $0 baseline $seed` を実行する。
     for mode in "${MODES[@]}"; do
         run_yamato_mode_seed "$mode" "$seed"
     done
@@ -271,8 +299,9 @@ cmd_pilot() {
 
 cmd_ci() {
     log "=== ci: seeds 1 and 2 を追加で回し、3 seed で 95% CI 判定 ==="
+    # baseline (seed 1, 2) は事前に保存済みの想定。未保存なら
+    # 明示的に `bash $0 baseline 1` 等を先に走らせること。
     for seed in 1 2; do
-        run_baseline_seed "$seed"
         for mode in "${MODES[@]}"; do
             run_yamato_mode_seed "$mode" "$seed"
         done
@@ -302,13 +331,14 @@ usage() {
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
-    setup)    cmd_setup ;;
-    smoke)    cmd_smoke ;;
-    baseline) cmd_baseline "$@" ;;
-    pilot)    cmd_pilot "$@" ;;
-    ci)       cmd_ci ;;
-    run)      cmd_run "$@" ;;
-    judge)    judge_mode "$@" ;;
+    setup)        cmd_setup ;;
+    smoke)        cmd_smoke ;;
+    smoke-fix-d)  cmd_smoke_fix_d "$@" ;;
+    baseline)     cmd_baseline "$@" ;;
+    pilot)        cmd_pilot "$@" ;;
+    ci)           cmd_ci ;;
+    run)          cmd_run "$@" ;;
+    judge)        judge_mode "$@" ;;
     ""|-h|--help) usage ;;
     *) err "unknown subcommand: $cmd"; usage ;;
 esac

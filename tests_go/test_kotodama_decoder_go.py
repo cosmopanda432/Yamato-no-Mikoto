@@ -169,7 +169,7 @@ class TestBiasApplication:
     def test_no_bias_when_oracle_returns_none(self):
         """oracle が None を返すと bias 加算 skip (vanilla 同等)"""
         decoder, backbone, tok, oracle = _build_decoder(oracle_response=None)
-        result = decoder.generate(backbone, tok, "func a(b ")
+        result = decoder.generate(backbone, tok, "var x ")
         bias_steps = [s for s in result.steps if s.bias_applied]
         assert len(bias_steps) == 0
 
@@ -177,51 +177,52 @@ class TestBiasApplication:
         """bias_value=0 で実質 vanilla"""
         oracle_resp = OracleResult(
             types=("int",), vars=("a",),
-            scope_kind="func_arg", ast_ok=True, elapsed_ms=1,
+            scope_kind="var_decl", ast_ok=True, elapsed_ms=1,
         )
         decoder, backbone, tok, oracle = _build_decoder(
             oracle_response=oracle_resp, bias_value=0.0,
         )
-        result = decoder.generate(backbone, tok, "func a(b ")
+        result = decoder.generate(backbone, tok, "var x ")
         bias_steps = [s for s in result.steps if s.bias_applied]
         assert len(bias_steps) == 0
 
     def test_oracle_called_when_filter_passes(self):
-        """事前 filter を通る位置 (`func a(b `) で oracle が呼ばれる"""
+        """事前 filter を通る位置 (`var x ` / `map[` 等) で oracle が呼ばれる。
+        2026-05-21 更新: func_arg を filter から外したため `var x ` に差し替え"""
         oracle_resp = OracleResult(
             types=("int",), vars=("a",),
-            scope_kind="func_arg", ast_ok=True, elapsed_ms=1,
+            scope_kind="var_decl", ast_ok=True, elapsed_ms=1,
         )
         decoder, backbone, tok, oracle = _build_decoder(oracle_response=oracle_resp)
-        decoder.generate(backbone, tok, "func a(b ")
+        decoder.generate(backbone, tok, "var x ")
         assert oracle.call_count >= 1
 
     def test_bias_applied_when_oracle_returns_scope(self):
         """oracle が valid な scope を返すと bias 加算が記録される"""
         oracle_resp = OracleResult(
             types=("int", "string"), vars=("a",),
-            scope_kind="func_arg", ast_ok=True, elapsed_ms=1,
+            scope_kind="var_decl", ast_ok=True, elapsed_ms=1,
         )
         decoder, backbone, tok, _ = _build_decoder(
             oracle_response=oracle_resp,
             firewall_enabled=False,
         )
-        result = decoder.generate(backbone, tok, "func a(b ")
+        result = decoder.generate(backbone, tok, "var x ")
         bias_steps = [s for s in result.steps if s.bias_applied]
         assert len(bias_steps) >= 1
-        # bias 加算された step は scope_kind = func_arg
-        assert all(s.scope_kind == "func_arg" for s in bias_steps)
+        # bias 加算された step は scope_kind = var_decl
+        assert all(s.scope_kind == "var_decl" for s in bias_steps)
 
     def test_no_inf_in_logits_after_bias(self):
         """bias は加算なので、logits に -inf が入らない (TS 版の轍を踏まない回帰)"""
         oracle_resp = OracleResult(
             types=("int",), vars=("a",),
-            scope_kind="func_arg", ast_ok=True, elapsed_ms=1,
+            scope_kind="var_decl", ast_ok=True, elapsed_ms=1,
         )
         decoder, backbone, tok, _ = _build_decoder(oracle_response=oracle_resp)
 
         # 直接 _maybe_apply_bias を呼んで logits を観察
-        prompt = "func a(b "
+        prompt = "var x "
         enc = tok(prompt, return_tensors="pt")
         out = backbone(input_ids=enc["input_ids"])
         last_logits = out.logits[:, -1, :].clone()
@@ -238,6 +239,143 @@ class TestBiasApplication:
         # bias 加算後も全て finite (-inf も NaN もなし)
         assert torch.isfinite(last_logits).all().item(), \
             "Go 版で logits に -inf や NaN が入ってはいけない"
+
+
+class TestSamplingRngIsolation:
+    """修正 D (2026-05-21): `sampling_seed` 指定時、サンプリングは専用 `torch.Generator`
+    を使い global RNG から隔離される。これにより `firewall.send` 等のサイドチャネル
+    (Python オブジェクト生成 / GC / CUDA stream 同期) が sampler に影響しなくなる"""
+
+    def _make_for_sampling(
+        self,
+        *,
+        sampling_seed: int | None,
+        firewall_enabled: bool = False,
+        backbone: nn.Module | None = None,
+        tok: MiniTokenizer | None = None,
+    ):
+        if tok is None:
+            tok = MiniTokenizer()
+        if backbone is None:
+            # 同じ weights で 2 つの decoder を比較できるように、呼び出し側で
+            # 事前に backbone を構築して使い回す
+            torch.manual_seed(0)
+            backbone = MockBackbone(vocab_size=len(tok))
+            backbone.eval()
+        bias_builder = GoSymbolBiasBuilder(tok, vocab_size=len(tok))
+        firewall = YomotsuHirasaka(YomiEvaluator())
+        config = KotodamaConfig(
+            max_new_tokens=12,
+            bias_value=0.0,
+            mask_enabled=False,
+            oracle_enabled=False,
+            firewall_interval=3,
+            firewall_enabled=firewall_enabled,
+            do_sample=True,
+            temperature=1.0,
+            top_k=20,
+            top_p=0.95,
+            sampling_seed=sampling_seed,
+        )
+        decoder = KotodamaDecoder(None, bias_builder, firewall, config)
+        return decoder, backbone, tok
+
+    def test_same_seed_reproducible(self):
+        """同じ sampling_seed で 2 回 generate → 同じ token 列"""
+        tok = MiniTokenizer()
+        torch.manual_seed(0)
+        backbone = MockBackbone(vocab_size=len(tok))
+        backbone.eval()
+
+        d1, _, _ = self._make_for_sampling(sampling_seed=42, backbone=backbone, tok=tok)
+        d2, _, _ = self._make_for_sampling(sampling_seed=42, backbone=backbone, tok=tok)
+        out1 = d1.generate(backbone, tok, "var x ")
+        out2 = d2.generate(backbone, tok, "var x ")
+        assert out1.generated_ids == out2.generated_ids
+
+    def test_different_seed_changes_output(self):
+        """異なる sampling_seed なら token 列が変わる (do_sample=True 経路の確認)"""
+        tok = MiniTokenizer()
+        torch.manual_seed(0)
+        backbone = MockBackbone(vocab_size=len(tok))
+        backbone.eval()
+
+        d1, _, _ = self._make_for_sampling(sampling_seed=42, backbone=backbone, tok=tok)
+        d2, _, _ = self._make_for_sampling(sampling_seed=999, backbone=backbone, tok=tok)
+        out1 = d1.generate(backbone, tok, "var x ")
+        out2 = d2.generate(backbone, tok, "var x ")
+        assert out1.generated_ids != out2.generated_ids
+
+    def test_isolated_from_global_rng(self):
+        """global RNG state を変えても、isolated Generator 制御下では出力が変わらない"""
+        tok = MiniTokenizer()
+        torch.manual_seed(0)
+        backbone = MockBackbone(vocab_size=len(tok))
+        backbone.eval()
+
+        d1, _, _ = self._make_for_sampling(sampling_seed=42, backbone=backbone, tok=tok)
+        torch.manual_seed(111)
+        out1 = d1.generate(backbone, tok, "var x ")
+
+        d2, _, _ = self._make_for_sampling(sampling_seed=42, backbone=backbone, tok=tok)
+        torch.manual_seed(222)
+        _ = torch.rand(100)  # global RNG をさらに消費 (サイドチャネル proxy)
+        out2 = d2.generate(backbone, tok, "var x ")
+
+        assert out1.generated_ids == out2.generated_ids, (
+            "isolated Generator 制御下で global RNG state が変わっても出力は同じ"
+        )
+
+    def test_firewall_toggle_byte_identical(self):
+        """修正 D の本来目的: firewall_enabled toggle で byte-identical (no HALT 時)
+
+        - 同じ backbone, 同じ prompt, 同じ sampling_seed
+        - vanilla (firewall OFF) と no-kotodama (firewall ON) を比較
+        - YomiEvaluator は通常 HALT を出さない (本 prompt では未学習 mock の出力に対し
+          OK / REPAIR を返す程度)。万一 HALT したら test は skip"""
+        tok = MiniTokenizer()
+        torch.manual_seed(0)
+        backbone = MockBackbone(vocab_size=len(tok))
+        backbone.eval()
+
+        d_van, _, _ = self._make_for_sampling(
+            sampling_seed=42, firewall_enabled=False, backbone=backbone, tok=tok,
+        )
+        out_van = d_van.generate(backbone, tok, "var x ")
+
+        d_fw, _, _ = self._make_for_sampling(
+            sampling_seed=42, firewall_enabled=True, backbone=backbone, tok=tok,
+        )
+        out_fw = d_fw.generate(backbone, tok, "var x ")
+
+        if out_fw.halted_early:
+            pytest.skip("firewall HALT で early stop。Generator 分離とは独立")
+
+        assert out_van.generated_ids == out_fw.generated_ids, (
+            "firewall toggle で byte-identical (修正 D が機能している証拠)"
+        )
+
+    def test_no_seed_uses_global_rng_legacy(self):
+        """sampling_seed=None なら従来通り global RNG を使う (backwards compat)"""
+        tok = MiniTokenizer()
+        torch.manual_seed(0)
+        backbone = MockBackbone(vocab_size=len(tok))
+        backbone.eval()
+
+        d, _, _ = self._make_for_sampling(
+            sampling_seed=None, backbone=backbone, tok=tok,
+        )
+        torch.manual_seed(7)
+        out1 = d.generate(backbone, tok, "var x ")
+
+        d2, _, _ = self._make_for_sampling(
+            sampling_seed=None, backbone=backbone, tok=tok,
+        )
+        torch.manual_seed(7)
+        out2 = d2.generate(backbone, tok, "var x ")
+
+        # global RNG seed を同じに reset したので同じ系列になる
+        assert out1.generated_ids == out2.generated_ids
 
 
 class TestFirewallIntegration:

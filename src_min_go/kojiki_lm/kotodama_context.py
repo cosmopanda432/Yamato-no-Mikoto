@@ -35,19 +35,53 @@ import re
 #
 # したがって filter pattern は `\s*$` (0 個以上) を使う。`\s+$` だと Qwen の
 # 生成パターンを取り逃して言霊が一度も発火しない (smoke で実証済み)。
+#
+# 設計の歴史 (2026-05-21 更新):
+# 初期実装は func_arg / func_return / var_decl / const_decl / type_alias を入れていた
+# が、mbpp-go ablation (2026-05-20) で「**func_arg / func_return 位置は LM が既に
+# top-1 で 0.9+ の確率で正解 token を選んでおり、+2.0 加算しても argmax は変わら
+# ない**」ことが判明。bias_step_count が 374 問中 365 問で発火していたが、bias
+# toggle で実際に出力が変わったのは 3 問 (0.8%) だけ。それも cosmetic な var_decl
+# のスタイル差で pass@1 / vet に効かなかった。
+#
+# 修正方針: 「LM が確信してる関数シグネチャ位置」を除外し、**LM が型の選択に迷う
+# 難所** に発火位置を絞る。具体的には:
+#   - chan の elem type: `chan ___`
+#   - map の key/val type: `map[___]V` / `map[K]___`
+#   - slice の elem type: `[]___`
+#   - interface method の return type: `interface { M() ___ }`
+#   - type assertion の型: `x.(___)`
+# これら複合型の elem 位置は LM の確信度が低く、bias で誘導できる余地がある。
 _TYPE_POSITION_HINTS: tuple[re.Pattern[str], ...] = (
-    # 関数引数の型位置 (後続の引数): `func f(x int, y` / `func f(x int, y `
-    re.compile(r"\bfunc\s+\w*\s*\([^)]*[,(]\s*\w+\s*$"),
-    # 関数の最初の引数: `func f(x` / `func f(x `
-    re.compile(r"\bfunc\s+\w*\s*\(\s*\w+\s*$"),
-    # 関数戻り値型: `func f(...)` / `func f(...) ` (引数閉じた直後)
-    re.compile(r"\bfunc\s+\w+\s*\([^()]*\)\s*$"),
+    # === 既存: 宣言位置 (var_decl は唯一 argmax を動かす実績あり) ===
     # var 宣言の型位置: `var x` / `var x `
     re.compile(r"\bvar\s+\w+\s*$"),
     # const 宣言の型位置: `const x` / `const x `
     re.compile(r"\bconst\s+\w+\s*$"),
     # type alias の右辺: `type T` / `type T `
     re.compile(r"\btype\s+\w+\s*$"),
+
+    # === 新規: 複合型の elem 位置 (難所、LM の確信度低め) ===
+    # チャネル elem 型: `chan` / `chan ` / `chan<- ` / `<-chan `
+    re.compile(r"\bchan\s*$"),
+    re.compile(r"<-chan\s*$"),
+    re.compile(r"\bchan<-\s*$"),
+    # マップ key 型: `map[` (cursor 直後)
+    re.compile(r"\bmap\[\s*$"),
+    # マップ value 型: `map[K]` (key 閉じ後)
+    re.compile(r"\bmap\[\w+\]\s*$"),
+    re.compile(r"\bmap\[\[\]\w+\]\s*$"),  # `map[[]K]` のように key が slice
+    # スライス elem 型: `[]` (前に整数リテラルや変数が無いことが必要、`a[i]` を弾く)
+    re.compile(r"(?:^|[^\w\)])\[\]\s*$"),
+    # 配列 elem 型: `[3]` のように数値長
+    re.compile(r"\b\[\d+\]\s*$"),
+    # interface method の return: `interface { Method() ` (引数閉じ後で `{` 内)
+    re.compile(r"\binterface\s*\{[^}]*\)\s*$"),
+    # type assertion `.(`: `x.(`
+    re.compile(r"\)\s*\.\(\s*$"),
+    re.compile(r"\w\.\(\s*$"),
+    # struct field の型位置: `type T struct { Field ` (フィールド名の後)
+    re.compile(r"\bstruct\s*\{[^}]*\b\w+\s*$"),
 )
 
 # 偽陽性ガード。Go ではジェネリック `<` も三項 `:` もないので積極的なガードは

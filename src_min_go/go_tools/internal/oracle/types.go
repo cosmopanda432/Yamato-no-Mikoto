@@ -63,6 +63,11 @@ func (r QueryResult) ToMap() map[string]any {
 }
 
 // ScopeKind は QueryResult.ScopeKind の取り得る値。
+//
+// 2026-05-21 更新: mbpp-go ablation で func_arg / func_return 位置は LM の確信度が
+// 高く bias 不発であることが判明。新たに「LM が型の選択に迷う複合型 elem 位置」
+// (chan / map / slice / interface method return / type assertion / struct field)
+// を追加した。Python 側 kotodama_context.py の filter とペア。
 const (
 	ScopeFuncArg    = "func_arg"
 	ScopeFuncReturn = "func_return"
@@ -70,5 +75,15 @@ const (
 	ScopeConstDecl  = "const_decl"
 	ScopeTypeAlias  = "type_alias"
 	ScopeField      = "field"
-	ScopeUnknown    = "unknown"
+
+	// 2026-05-21 追加: 「難所」型位置
+	ScopeChanElem        = "chan_elem"        // chan ___ / chan<- ___ / <-chan ___
+	ScopeMapKey          = "map_key"          // map[___]V
+	ScopeMapVal          = "map_val"          // map[K]___
+	ScopeSliceElem       = "slice_elem"       // []___ (or [N]___)
+	ScopeInterfaceMethod = "interface_method" // interface { Method() ___ }
+	ScopeTypeAssert      = "type_assert"      // x.(___)
+	ScopeStructField     = "struct_field"     // struct { Field ___ }
+
+	ScopeUnknown = "unknown"
 )

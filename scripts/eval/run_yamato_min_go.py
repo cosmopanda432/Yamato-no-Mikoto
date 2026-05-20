@@ -139,6 +139,8 @@ def main():
         mask_enabled=bias_enabled,
         firewall_enabled=firewall_enabled,
         oracle_enabled=bias_enabled,
+        # sampling_seed は prompt 単位で派生させる (loop 内で再設定)
+        sampling_seed=args.seed,
     )
 
     decoder = KotodamaDecoder(oracle, bias_builder, firewall, kotodama_cfg)
@@ -164,6 +166,13 @@ def main():
 
             prompt = row["prompt"]
             stop_tokens = list(row.get("stop_tokens") or [])
+
+            # 修正 D: prompt 単位の deterministic seed を派生させ、サンプリングを
+            # 物理的に隔離する。これにより mode 間 (vanilla / no-kotodama / no-firewall /
+            # full) で **同一 prompt は同一 seed** となり、`firewall.send` 等の
+            # サイドチャネルが sampler に影響しなくなる (firewall_enabled toggle で
+            # byte-identical を狙う)。1_000_003 は prime > 374 なので衝突なし。
+            kotodama_cfg.sampling_seed = args.seed * 1_000_003 + i
 
             t0 = time.time()
             result = decoder.generate(backbone, tokenizer, prompt, prompt_id=name)

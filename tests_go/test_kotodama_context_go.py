@@ -13,20 +13,30 @@ from kojiki_lm.kotodama_context import looks_like_type_position  # noqa: E402
 
 
 @pytest.mark.parametrize("text", [
-    # 関数引数の型位置
-    "func add(a int, b ",
-    "func f(\n  bar ",
-    "func process(data ",
-    # 関数の単独引数
-    "func square(x ",
-    # 関数戻り値型 (引数閉じた直後の空白)
-    "func Greet(name string) ",
-    "func Distance(p Point, q Point) ",
+    # === 宣言位置 (残置: var_decl は唯一 argmax を動かす実績あり) ===
     # 変数宣言
     "var x ",
     "const Z ",
     # type alias
     "type Foo ",
+    # === 2026-05-21 追加: 「難所」型位置 (func_arg / func_return より優先) ===
+    # チャネル elem
+    "ch := make(chan ",
+    "var c chan",
+    "<-chan",
+    # マップ key/val
+    "m := map[",
+    "var m map[string]",
+    # スライス elem
+    "var s []",
+    "return []",
+    # interface method return
+    "type R interface { Foo() ",
+    # type assertion
+    "v.(",
+    "x.(",
+    # struct field
+    "type T struct { Name ",
 ])
 def test_pass_filter_for_likely_type_position(text: str):
     assert looks_like_type_position(text), f"expected to pass: {text!r}"
@@ -45,6 +55,13 @@ def test_pass_filter_for_likely_type_position(text: str):
     "x = ",
     # 空テキスト
     "",
+    # === 2026-05-21 追加: func_arg / func_return は除外 (LM 高確信、bias 不発) ===
+    "func add(a int, b ",
+    "func f(\n  bar ",
+    "func process(data ",
+    "func square(x ",
+    "func Greet(name string) ",
+    "func Distance(p Point, q Point) ",
 ])
 def test_skip_filter_for_non_type_tails(text: str):
     assert not looks_like_type_position(text), f"expected to skip: {text!r}"
@@ -67,6 +84,13 @@ def test_prompt_docstring_does_not_block_var_decl():
         "\tvar result "
     )
     assert looks_like_type_position(prompt)
+
+
+def test_slice_elem_does_not_match_array_index():
+    """`arr[i]` のような添字アクセスを slice elem 型として誤検出しないこと"""
+    # `arr[i]` の後の末尾は `]` で終わる、slice elem 型位置 (`[]`) と区別する必要
+    assert not looks_like_type_position("if arr[i] == 0")
+    assert not looks_like_type_position("v := arr[i]")
 
 
 def test_current_line_comment_still_rejected():
