@@ -35,8 +35,10 @@ from kojiki_lm.kotodama_context import looks_like_type_position  # noqa: E402
     # type assertion
     "v.(",
     "x.(",
-    # struct field
-    "type T struct { Name ",
+    # struct field — multi-line のみ受け入れる (field 名完了直後 = 型位置)
+    "type T struct {\n    Name",
+    "type T struct {\n    Name string\n    Age",
+    "type T struct {\n\tName",
 ])
 def test_pass_filter_for_likely_type_position(text: str):
     assert looks_like_type_position(text), f"expected to pass: {text!r}"
@@ -87,10 +89,29 @@ def test_prompt_docstring_does_not_block_var_decl():
 
 
 def test_slice_elem_does_not_match_array_index():
-    """`arr[i]` のような添字アクセスを slice elem 型として誤検出しないこと"""
+    """`arr[i]` / `arr[0]` のような添字アクセスを slice elem 型として誤検出しない"""
     # `arr[i]` の後の末尾は `]` で終わる、slice elem 型位置 (`[]`) と区別する必要
     assert not looks_like_type_position("if arr[i] == 0")
     assert not looks_like_type_position("v := arr[i]")
+    # 2026-05-21 fix: 数字添字 `arr[0]` も誤検出されないこと (旧 `\b\[\d+\]\s*$` は
+    # word boundary 仕様で arr[0] にマッチしていた偽陽性)
+    assert not looks_like_type_position("v := arr[0]")
+    assert not looks_like_type_position("return data[5]")
+
+
+def test_struct_field_only_fires_at_type_position():
+    """struct 内で **field 名完了直後 (= 型位置)** のみ match し、type を typing
+    中・後続 field 名 typing 中では match しないこと (2026-05-21 偽陽性修正の回帰)"""
+    # 型を typing 中 = 過去の field の型部分を生成中。次は \n か残りの type 文字。
+    # ここで bias を効かせると LM が選びたい token (= 残りの type 文字) を阻害する。
+    assert not looks_like_type_position("type T struct {\n    Name string")
+    assert not looks_like_type_position("type T struct {\n    Name string\n    Age int")
+    # struct を開いただけで field 名がまだ無い
+    assert not looks_like_type_position("type T struct {\n")
+    assert not looks_like_type_position("type T struct {\n    ")
+    # 正しい match (field 名完了 → 次が型位置)
+    assert looks_like_type_position("type T struct {\n    Name")
+    assert looks_like_type_position("type T struct {\n    Name string\n    Age")
 
 
 def test_current_line_comment_still_rejected():

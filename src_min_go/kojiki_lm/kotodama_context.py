@@ -73,15 +73,24 @@ _TYPE_POSITION_HINTS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bmap\[\[\]\w+\]\s*$"),  # `map[[]K]` のように key が slice
     # スライス elem 型: `[]` (前に整数リテラルや変数が無いことが必要、`a[i]` を弾く)
     re.compile(r"(?:^|[^\w\)])\[\]\s*$"),
-    # 配列 elem 型: `[3]` のように数値長
-    re.compile(r"\b\[\d+\]\s*$"),
+    # 配列 elem 型: `[3]` のように数値長 (前に word/paren が無いことが必要)
+    # 修正 2026-05-21: 以前は `\b\[\d+\]\s*$` で arr[0] (添字アクセス) も match して
+    # 偽陽性が量産されていた。先頭または非 word/paren の後に限定する。
+    re.compile(r"(?:^|[^\w\)])\[\d+\]\s*$"),
     # interface method の return: `interface { Method() ` (引数閉じ後で `{` 内)
     re.compile(r"\binterface\s*\{[^}]*\)\s*$"),
     # type assertion `.(`: `x.(`
     re.compile(r"\)\s*\.\(\s*$"),
     re.compile(r"\w\.\(\s*$"),
-    # struct field の型位置: `type T struct { Field ` (フィールド名の後)
-    re.compile(r"\bstruct\s*\{[^}]*\b\w+\s*$"),
+    # struct field の型位置: `struct { ... \n  Name` のように **直前行が
+    # `<indent><identifier>` のみ** の状態 (= field 名完了、次が型位置)。
+    # 修正 2026-05-21: 以前の `\bstruct\s*\{[^}]*\b\w+\s*$` は struct 内の
+    # 任意 identifier 末尾で match していたため、field 名 typing 中・型 typing 中・
+    # 後続 field 名 typing 中の全てで発火する偽陽性が量産された
+    # (mbpp-go full × 29 問で 209 件、67%、argmax 変化 1.6%)。
+    # 改行 + indent + word のみを要求して「field 名完了直後」のみに限定する。
+    # 単一行 `struct { Name ` は match しないが、実コードではほぼ multi-line。
+    re.compile(r"struct\s*\{[^}]*\n[\t ]+\w+$"),
 )
 
 # 偽陽性ガード。Go ではジェネリック `<` も三項 `:` もないので積極的なガードは

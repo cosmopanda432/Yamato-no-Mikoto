@@ -31,13 +31,19 @@ var (
 	reInequalityTail = regexp.MustCompile(`[a-zA-Z0-9_)\]]\s*[<>]=?\s*$`)
 
 	// 2026-05-21 追加: 「難所」型位置の regex 検出 (Python 側 kotodama_context.py と同期)
+	// 2026-05-21 fix: reSliceElem / reStructField の偽陽性を縮小 (mbpp-go run で
+	// struct_field が 67% を占め、argmax 変化 1.6% だった原因 — 詳細はコメント末尾参照)
 	reChanElem        = regexp.MustCompile(`\bchan\s*$|<-chan\s*$|\bchan<-\s*$`)
 	reMapKey          = regexp.MustCompile(`\bmap\[\s*$`)
 	reMapVal          = regexp.MustCompile(`\bmap\[\w+\]\s*$|\bmap\[\[\]\w+\]\s*$`)
-	reSliceElem       = regexp.MustCompile(`(?:^|[^\w\)])\[\]\s*$|\b\[\d+\]\s*$`)
+	// `[]` または `[N]` (N は数字) の前に word/paren が無いことを要求 (arr[0] を弾く)
+	reSliceElem       = regexp.MustCompile(`(?:^|[^\w\)])\[\]\s*$|(?:^|[^\w\)])\[\d+\]\s*$`)
 	reInterfaceMethod = regexp.MustCompile(`\binterface\s*\{[^}]*\)\s*$`)
 	reTypeAssert      = regexp.MustCompile(`\)\s*\.\(\s*$|\w\.\(\s*$`)
-	reStructField     = regexp.MustCompile(`\bstruct\s*\{[^}]*\b\w+\s*$`)
+	// 直前行が `<indent><identifier>` のみ = field 名完了直後の型位置に限定。
+	// 旧 `\bstruct\s*\{[^}]*\b\w+\s*$` は field 名 typing 中・型 typing 中・後続
+	// field 名 typing 中の全てで発火していた (209/29 問、argmax 変化 1.6%)。
+	reStructField     = regexp.MustCompile(`struct\s*\{[^}]*\n[\t ]+\w+$`)
 )
 
 // Query は prompt[:cursor] を Go source として解析し、その位置で参照可能な
