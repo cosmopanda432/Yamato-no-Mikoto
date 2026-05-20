@@ -1,0 +1,105 @@
+{
+  "mode": "full",
+  "n_seeds_baseline": 1,
+  "n_seeds_yamato": 1,
+  "n_total": 374,
+  "baseline": {
+    "test_pass_rate": {
+      "mean": 0.4625668449197861,
+      "sd": 0.0,
+      "ci_low": 0.4625668449197861,
+      "ci_high": 0.4625668449197861,
+      "per_seed": [
+        0.4625668449197861
+      ]
+    },
+    "vet_pass_rate": {
+      "mean": 0.6764705882352942,
+      "sd": 0.0,
+      "ci_low": 0.6764705882352942,
+      "ci_high": 0.6764705882352942,
+      "per_seed": [
+        0.6764705882352942
+      ]
+    },
+    "build_pass_rate": {
+      "mean": 1.0,
+      "sd": 0.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "per_seed": [
+        1.0
+      ]
+    },
+    "undefined_rate": {
+      "mean": 0.0,
+      "sd": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "per_seed": [
+        0.0
+      ]
+    }
+  },
+  "yamato": {
+    "test_pass_rate": {
+      "mean": 0.5026737967914439,
+      "sd": 0.0,
+      "ci_low": 0.5026737967914439,
+      "ci_high": 0.5026737967914439,
+      "per_seed": [
+        0.5026737967914439
+      ]
+    },
+    "vet_pass_rate": {
+      "mean": 0.7486631016042781,
+      "sd": 0.0,
+      "ci_low": 0.7486631016042781,
+      "ci_high": 0.7486631016042781,
+      "per_seed": [
+        0.7486631016042781
+      ]
+    },
+    "build_pass_rate": {
+      "mean": 1.0,
+      "sd": 0.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "per_seed": [
+        1.0
+      ]
+    },
+    "undefined_rate": {
+      "mean": 0.0,
+      "sd": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "per_seed": [
+        0.0
+      ]
+    }
+  },
+  "deltas_pp": {
+    "test_pass_rate": 0.04010695187165775,
+    "vet_pass_rate": 0.07219251336898391,
+    "build_pass_rate": 0.0,
+    "undefined_rate": 0.0
+  },
+  "win_condition": {
+    "primary": {
+      "metric": "test_pass_rate",
+      "threshold_pp": 0.05,
+      "delta_pp": 0.04010695187165775,
+      "passed": false,
+      "ci_lower_clears_threshold": false
+    },
+    "secondary": {
+      "metric": "vet_pass_rate",
+      "threshold_pp": 0.05,
+      "delta_pp": 0.07219251336898391,
+      "passed": true,
+      "ci_lower_clears_threshold": true
+    },
+    "overall": false
+  }
+}
