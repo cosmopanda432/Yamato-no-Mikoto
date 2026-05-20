@@ -13,7 +13,7 @@ authors = [{ name = "cosmopanda432" }]
 
 dependencies = [
     "torch>=2.1",
-    "transformers>=4.40",
+    "transformers>=4.40,<5",
     "peft>=0.10",
     "accelerate>=0.27",
     "pyarrow>=14",
