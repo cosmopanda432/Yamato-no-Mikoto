@@ -34,3 +34,6 @@ src_min_go/go_tools/bin/
 
 # Run logs (RunPod bench)
 *.log
+
+# Analysis dumps (生成物、data/eval/ から再現可能)
+analysis/
