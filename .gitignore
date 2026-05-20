@@ -31,3 +31,6 @@ src/ts_tools/dist/
 
 # Go build outputs
 src_min_go/go_tools/bin/
+
+# Run logs (RunPod bench)
+*.log

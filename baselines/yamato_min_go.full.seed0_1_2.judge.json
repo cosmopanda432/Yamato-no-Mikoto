@@ -1,0 +1,121 @@
+{
+  "mode": "full",
+  "n_seeds_baseline": 3,
+  "n_seeds_yamato": 3,
+  "n_total": 154,
+  "baseline": {
+    "test_pass_rate": {
+      "mean": 0.25757575757575757,
+      "sd": 0.030687114456185764,
+      "ci_low": 0.18133858662907543,
+      "ci_high": 0.3338129285224397,
+      "per_seed": [
+        0.2922077922077922,
+        0.24675324675324675,
+        0.23376623376623376
+      ]
+    },
+    "vet_pass_rate": {
+      "mean": 0.3961038961038961,
+      "sd": 0.019480519480519487,
+      "ci_low": 0.3477076972404618,
+      "ci_high": 0.44450009496733045,
+      "per_seed": [
+        0.4155844155844156,
+        0.3961038961038961,
+        0.37662337662337664
+      ]
+    },
+    "build_pass_rate": {
+      "mean": 1.0,
+      "sd": 0.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "per_seed": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "undefined_rate": {
+      "mean": 0.0,
+      "sd": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "per_seed": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "yamato": {
+    "test_pass_rate": {
+      "mean": 0.32900432900432897,
+      "sd": 0.013517311684845022,
+      "ci_low": 0.29542275511185806,
+      "ci_high": 0.36258590289679987,
+      "per_seed": [
+        0.3246753246753247,
+        0.3181818181818182,
+        0.34415584415584416
+      ]
+    },
+    "vet_pass_rate": {
+      "mean": 0.5497835497835498,
+      "sd": 0.047864381791116864,
+      "ci_low": 0.43087223728212043,
+      "ci_high": 0.6686948622849792,
+      "per_seed": [
+        0.5324675324675324,
+        0.512987012987013,
+        0.6038961038961039
+      ]
+    },
+    "build_pass_rate": {
+      "mean": 1.0,
+      "sd": 0.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "per_seed": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "undefined_rate": {
+      "mean": 0.0,
+      "sd": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "per_seed": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "deltas_pp": {
+    "test_pass_rate": 0.0714285714285714,
+    "vet_pass_rate": 0.1536796536796537,
+    "build_pass_rate": 0.0,
+    "undefined_rate": 0.0
+  },
+  "win_condition": {
+    "primary": {
+      "metric": "test_pass_rate",
+      "threshold_pp": 0.05,
+      "delta_pp": 0.0714285714285714,
+      "passed": true,
+      "ci_lower_clears_threshold": false
+    },
+    "secondary": {
+      "metric": "vet_pass_rate",
+      "threshold_pp": 0.05,
+      "delta_pp": 0.1536796536796537,
+      "passed": true,
+      "ci_lower_clears_threshold": false
+    },
+    "overall": true
+  }
+}
