@@ -24,6 +24,9 @@
 #   MAX_NEW_TOKENS     (default: 256)
 #   TEMPERATURE        (default: 0.2)
 #   BIAS_VALUE         言霊 v2 のソフトバイアス加算量 (default: 2.0、docs/roadmap_min_go.md 推奨)
+#   DATASET            MultiPL-E subset (default: humaneval-go)。mbpp-go (374 問) 等も可。
+#                      data/raw/multipl_e/$DATASET/test-00000-of-00001.parquet を入出力で使う。
+#                      対象ディレクトリ / judge JSON ファイル名にも $DATASET が入る。
 #   GO_TARBALL         Go ツールチェーン tarball (go1.26.3.linux-amd64.tar.gz)
 #                      未設定なら /root/go1.26.3.linux-amd64.tar.gz をデフォルトで探す
 #   GO_BIN             go コマンドパス (default: 自動検出 → /usr/local/go/bin/go fallback)
@@ -45,9 +48,11 @@ MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-256}"
 TEMPERATURE="${TEMPERATURE:-0.2}"
 BIAS_VALUE="${BIAS_VALUE:-2.0}"
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
+# MultiPL-E subset: humaneval-go (154 問) / mbpp-go (374 問) 等
+DATASET="${DATASET:-humaneval-go}"
 
 ORACLE_BIN="$REPO_ROOT/src_min_go/go_tools/bin/symbol_oracle"
-PARQUET="$REPO_ROOT/data/raw/multipl_e/humaneval-go/test-00000-of-00001.parquet"
+PARQUET="$REPO_ROOT/data/raw/multipl_e/${DATASET}/test-00000-of-00001.parquet"
 MODES=("full" "no-kotodama" "no-firewall" "vanilla")
 
 # --- helpers ----------------------------------------------------------------
@@ -97,8 +102,8 @@ install_go_if_missing() {
 # baseline 生成 + 評価
 run_baseline_seed() {
     local seed="$1"
-    local gen_dir="data/eval/generated/humaneval-go.baseline.seed${seed}"
-    local eval_dir="data/eval/results/humaneval-go.baseline.seed${seed}"
+    local gen_dir="data/eval/generated/${DATASET}.baseline.seed${seed}"
+    local eval_dir="data/eval/results/${DATASET}.baseline.seed${seed}"
 
     if [[ "$SKIP_EXISTING" == "1" && -s "$eval_dir/_summary.json" ]]; then
         log "baseline seed=$seed already evaluated, skip"; return
@@ -126,8 +131,8 @@ run_baseline_seed() {
 run_yamato_mode_seed() {
     local mode="$1"
     local seed="$2"
-    local gen_dir="data/eval/generated/humaneval-go.yamato_min_go.${mode}.seed${seed}"
-    local eval_dir="data/eval/results/humaneval-go.yamato_min_go.${mode}.seed${seed}"
+    local gen_dir="data/eval/generated/${DATASET}.yamato_min_go.${mode}.seed${seed}"
+    local eval_dir="data/eval/results/${DATASET}.yamato_min_go.${mode}.seed${seed}"
 
     if [[ "$SKIP_EXISTING" == "1" && -s "$eval_dir/_summary.json" ]]; then
         log "yamato mode=$mode seed=$seed already evaluated, skip"; return
@@ -167,15 +172,15 @@ judge_mode() {
     local base_summaries=()
     local yam_summaries=()
     for s in "${seeds[@]}"; do
-        local bs="data/eval/results/humaneval-go.baseline.seed${s}/_summary.json"
-        local ys="data/eval/results/humaneval-go.yamato_min_go.${mode}.seed${s}/_summary.json"
+        local bs="data/eval/results/${DATASET}.baseline.seed${s}/_summary.json"
+        local ys="data/eval/results/${DATASET}.yamato_min_go.${mode}.seed${s}/_summary.json"
         if [[ ! -s "$bs" ]]; then err "missing baseline summary: $bs"; return 1; fi
         if [[ ! -s "$ys" ]]; then err "missing yamato summary: $ys"; return 1; fi
         base_summaries+=("$bs")
         yam_summaries+=("$ys")
     done
 
-    local out="baselines/yamato_min_go.${mode}.seed$(IFS=_; echo "${seeds[*]}").judge.json"
+    local out="baselines/yamato_min_go.${DATASET}.${mode}.seed$(IFS=_; echo "${seeds[*]}").judge.json"
     mkdir -p "$(dirname "$out")"
     log "judge mode=$mode seeds=[${seeds[*]}] -> $out"
     python3 scripts/eval/judge_win_condition_go.py \
@@ -207,19 +212,20 @@ cmd_setup() {
         log "model already present, skip"
     fi
 
-    log "[3/4] humaneval-go parquet"
+    log "[3/4] ${DATASET} parquet"
     if [[ ! -s "$PARQUET" ]]; then
         # parquet 取得用に datasets が必要 (pyproject の dep には入れてない)
         python3 -m pip install --quiet "datasets>=2.14"
         mkdir -p "$(dirname "$PARQUET")"
-        python3 - <<'PY'
-from datasets import load_dataset
+        DATASET="$DATASET" PARQUET="$PARQUET" python3 - <<'PY'
 import os
-ds = load_dataset("nuprl/MultiPL-E", "humaneval-go", split="test")
-out = "data/raw/multipl_e/humaneval-go/test-00000-of-00001.parquet"
+from datasets import load_dataset
+dataset = os.environ["DATASET"]
+out = os.environ["PARQUET"]
+ds = load_dataset("nuprl/MultiPL-E", dataset, split="test")
 os.makedirs(os.path.dirname(out), exist_ok=True)
 ds.to_parquet(out)
-print("wrote", out, "rows=", len(ds))
+print(f"wrote {out} rows={len(ds)}")
 PY
     else
         log "parquet already present, skip"
@@ -241,7 +247,7 @@ PY
 cmd_smoke() {
     log "=== smoke: vanilla mode × seed 0 × N=5 (env / pipeline 動作確認) ==="
     LIMIT=5 SKIP_EXISTING=0 run_yamato_mode_seed vanilla 0
-    log "smoke complete. inspect data/eval/results/humaneval-go.yamato_min_go.vanilla.seed0/_summary.json"
+    log "smoke complete. inspect data/eval/results/${DATASET}.yamato_min_go.vanilla.seed0/_summary.json"
 }
 
 cmd_baseline() {
