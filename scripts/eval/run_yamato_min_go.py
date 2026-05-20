@@ -76,6 +76,10 @@ def parse_args():
 
     ap.add_argument("--max-new-tokens", type=int, default=256)
     ap.add_argument("--temperature", type=float, default=0.2)
+    ap.add_argument("--top-k", type=int, default=50,
+                    help="run_baseline_go.py (model.generate) と一致させるためのデフォルト")
+    ap.add_argument("--top-p", type=float, default=0.95,
+                    help="run_baseline_go.py の top_p=0.95 と一致")
     ap.add_argument("--bias-value", type=float, default=2.0,
                     help="言霊 bias の加算量 (0.0 で実質 vanilla)")
     ap.add_argument("--firewall-interval", type=int, default=16)
@@ -130,6 +134,8 @@ def main():
         firewall_interval=args.firewall_interval,
         temperature=args.temperature,
         do_sample=args.temperature > 0,
+        top_k=args.top_k,
+        top_p=args.top_p,
         mask_enabled=bias_enabled,
         firewall_enabled=firewall_enabled,
         oracle_enabled=bias_enabled,

@@ -47,6 +47,10 @@ class KotodamaConfig:
 
     temperature: float = 1.0
     do_sample: bool = False
+    top_k: int = 50
+    """transformers.generate のデフォルトに揃える (0 で disable)"""
+    top_p: float = 0.95
+    """nucleus sampling 上限累積確率 (1.0 で disable)"""
 
     # Ablation 用
     mask_enabled: bool = True
@@ -277,11 +281,45 @@ class KotodamaDecoder:
         return True, result.scope_kind, num_allowed, result.types[:5]
 
     def _sample(self, logits: torch.Tensor) -> torch.Tensor:
+        """transformers.generate の LogitsProcessor pipeline と等価:
+        TemperatureLogitsWarper → TopKLogitsWarper(50) → TopPLogitsWarper(0.95) → multinomial.
+
+        以前は temperature だけで全 vocab から multinomial していたため、
+        run_baseline_go.py (model.generate 経由) と異なる確率過程となり、
+        seed 一致でも出力が大きく分岐していた (2026-05-20 mbpp-go ablation で発覚)。
+        """
         cfg = self.config
-        if cfg.do_sample and cfg.temperature > 0:
-            probs = torch.softmax(logits / cfg.temperature, dim=-1)
-            return torch.multinomial(probs, 1)
-        return logits.argmax(dim=-1, keepdim=True)
+        if not (cfg.do_sample and cfg.temperature > 0):
+            return logits.argmax(dim=-1, keepdim=True)
+
+        # logits を破壊的に変更しないよう clone してから処理
+        logits = logits.clone() / cfg.temperature
+
+        # top-k filter: 上位 k 個以外を -inf
+        if cfg.top_k > 0 and cfg.top_k < logits.size(-1):
+            kth_vals, _ = torch.topk(logits, cfg.top_k, dim=-1)
+            kth_threshold = kth_vals[..., -1, None]
+            logits = torch.where(logits < kth_threshold,
+                                 torch.full_like(logits, float("-inf")),
+                                 logits)
+
+        # top-p (nucleus) filter: 累積確率 top_p を超えた tail を -inf
+        if 0.0 < cfg.top_p < 1.0:
+            sorted_logits, sorted_idx = torch.sort(logits, descending=True, dim=-1)
+            cum_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+            # 「累積が top_p を超えた」位置は捨てるが、最初の超え位置までは残す
+            sorted_remove = cum_probs > cfg.top_p
+            sorted_remove[..., 1:] = sorted_remove[..., :-1].clone()
+            sorted_remove[..., 0] = False
+            # sorted_idx で元位置に戻す
+            remove_mask = torch.zeros_like(sorted_remove)
+            remove_mask.scatter_(-1, sorted_idx, sorted_remove)
+            logits = torch.where(remove_mask,
+                                 torch.full_like(logits, float("-inf")),
+                                 logits)
+
+        probs = torch.softmax(logits, dim=-1)
+        return torch.multinomial(probs, 1)
 
     @staticmethod
     def _infer_device(backbone: Any, fallback: torch.device) -> torch.device:
