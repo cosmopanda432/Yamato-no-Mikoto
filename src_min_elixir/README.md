@@ -6,18 +6,20 @@ yamatoLLM Elixir 版 — Firewall (黄泉比良坂) を **BEAM プロセス境�
 
 ## 現状 (2026-05-21)
 
-8 ステップのうち **Step 4 (Firewall 本体) + 骨格 (L3/L5/Config の stub)** までを実装。
+8 ステップのうち **Step 3 / 4 / 6 / 7 を本実装**。Linux + Elixir 1.18 ローカル
+(asdf 経由) で `mix test` が 62/62 緑。Step 1 / 2 / 5 / 8 は GPU (RunPod A6000)
+依存のため未着手。
 
 | Step | 内容 | 状態 |
 |---|---|---|
-| 1 | Mix project + Bumblebee (~> 0.7) + Qwen3-Coder-30B-A3B-Instruct load (int8 量子化) | mix.exs の deps を comment-out で配置 |
-| 2 | `KojikiLM.L3` GenServer (generate + sampling) | stub のみ |
-| 3 | `KojikiLM.L5` GenServer (`System.cmd("elixir", [.exs])` で別プロセス実行) | stub のみ |
+| 1 | Mix project + Bumblebee (~> 0.7) + Qwen3-Coder-30B-A3B-Instruct load (int8 量子化) | mix.exs の deps を comment-out で配置、本実装は RunPod 待ち |
+| 2 | `KojikiLM.L3` GenServer (generate + sampling) | stub のみ (Step 1 待ち) |
+| 3 | `KojikiLM.L5` GenServer (`System.cmd("elixir", [.exs])` で別プロセス実行) | **本実装** (subprocess + heuristic 二段) |
 | 4 | `KojikiLM.YomotsuHirasaka` (BEAM proc 境界の薄ラッパー) | **本実装** |
-| 5 | 型位置 bias (set-theoretic types からの抽出) | 未着手 |
-| 6 | 機械的 REPAIR (`Mix.format` + AST + "did you mean" parser) | 未着手 |
-| 7 | MultiPL-E elixir runner (`elixir <file>` CLI ベース、`mix test` 不要) | 未着手 |
-| 8 | 検証 + ablation (vanilla vs full の byte-identical) | 未着手 |
+| 5 | 型位置 bias (set-theoretic types からの抽出) | 未着手 (Elixir 1.20 待ち) |
+| 6 | 機械的 REPAIR (`Code.format_string!` + `Code.string_to_quoted` hint パーサ) | **本実装** |
+| 7 | MultiPL-E elixir runner (`elixir <file>` CLI ベース、`mix test` 不要) | **本実装** ([scripts/eval/elixir_eval.py](../scripts/eval/elixir_eval.py)) |
+| 8 | 検証 + ablation (vanilla vs full の byte-identical) | 未着手 (Step 1/2 待ち) |
 
 **2026-05-21 確定方針** (詳細 [docs/roadmap_min_elixir.md](../docs/roadmap_min_elixir.md)):
 
@@ -37,19 +39,33 @@ Python 版で `__post_init__` で手動 assert していた型契約は、Elixir
 
 ## 動かし方
 
-Elixir 1.20 と Mix が必要 (今のマシンには未 install)。Windows なら:
+Elixir 1.18 以上 + Erlang/OTP 27 が必要 (Step 5 の set-theoretic types を使うとき
+だけ Elixir 1.20 が要る。Step 3/4/6/7 は 1.18 で動く)。
 
-```powershell
-# winget で導入
-winget install Erlang.Erlang
-winget install ElixirLang.Elixir
-# あるいは asdf-vm + asdf install elixir 1.20.0-otp-27
+Linux (Ubuntu) で asdf を使うなら:
+
+```bash
+# 1. ビルド deps (Erlang を source build するため)
+sudo apt-get install -y build-essential autoconf m4 libssl-dev libncurses-dev
+
+# 2. asdf 導入
+git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.1 --depth 1
+echo '. "$HOME/.asdf/asdf.sh"' >> ~/.bashrc && . ~/.asdf/asdf.sh
+
+# 3. plugin + 本体
+asdf plugin add erlang && asdf plugin add elixir
+KERL_CONFIGURE_OPTIONS="--without-wx --without-debugger --without-observer --without-jinterface --without-megaco --without-odbc --without-javac" \
+  asdf install erlang 27.3.4.11
+asdf install elixir 1.18.4-otp-27
+# src_min_elixir/ には .tool-versions が置いてあるので cd するだけで切替わる
 ```
+
+Windows なら `winget install Erlang.Erlang && winget install ElixirLang.Elixir`。
 
 ```bash
 cd src_min_elixir
-mix deps.get        # Step 4 段階では deps なしなので no-op
-mix test            # YomotsuHirasaka の単体テスト
+mix deps.get        # Step 4 + 3 + 6 段階では deps なしなので no-op
+mix test            # 62 tests, 0 failures が想定値
 mix format          # `.formatter.exs` に従う
 ```
 
@@ -59,6 +75,7 @@ mix format          # `.formatter.exs` に従う
 src_min_elixir/
 ├── mix.exs
 ├── .formatter.exs
+├── .tool-versions                # erlang 27.3.4.11 / elixir 1.18.4-otp-27
 ├── README.md
 ├── lib/
 │   └── kojiki_lm/
@@ -66,8 +83,9 @@ src_min_elixir/
 │       ├── l3_to_l5_payload.ex   # 葦原 → 黄泉 struct + new!/3 validator
 │       ├── l5_to_l3_verdict.ex   # 黄泉 → 葦原 struct + new!/2 validator
 │       ├── yomotsu_hirasaka.ex   # GenServer ゲートウェイ本体
-│       ├── l3.ex                 # Step 2 stub
-│       ├── l5.ex                 # Step 3 stub
+│       ├── l3.ex                 # Step 2 stub (Bumblebee 待ち)
+│       ├── l5.ex                 # Step 3 本実装 (subprocess + heuristic 二段)
+│       ├── mechanical_repair.ex  # Step 6 本実装 (Code.format_string! + hint)
 │       └── config.ex             # Step 1 stub
 └── test/
     ├── test_helper.exs
@@ -77,7 +95,9 @@ src_min_elixir/
         ├── verdict_test.exs
         ├── l3_to_l5_payload_test.exs
         ├── l5_to_l3_verdict_test.exs
-        └── yomotsu_hirasaka_test.exs
+        ├── yomotsu_hirasaka_test.exs
+        ├── l5_test.exs                # 14 tests: empty / 構文 / subprocess / GenServer 境界
+        └── mechanical_repair_test.exs # 9 tests: format / hint / chain
 ```
 
 ## Python 版との対応

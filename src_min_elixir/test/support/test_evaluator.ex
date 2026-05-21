@@ -27,12 +27,11 @@ defmodule KojikiLM.TestEvaluator do
     {:reply, state.fun.(payload), %{state | last_caller_pid: caller}}
   end
 
-  @doc "直近の呼び出し元 PID (= YomotsuHirasaka GenServer の PID) を取得"
-  @spec last_caller_pid(GenServer.server()) :: pid() | nil
-  def last_caller_pid(server), do: GenServer.call(server, :last_caller_pid)
-
-  @impl true
   def handle_call(:last_caller_pid, _from, state) do
     {:reply, state.last_caller_pid, state}
   end
+
+  @doc "直近の呼び出し元 PID (= YomotsuHirasaka GenServer の PID) を取得"
+  @spec last_caller_pid(GenServer.server()) :: pid() | nil
+  def last_caller_pid(server), do: GenServer.call(server, :last_caller_pid)
 end

@@ -11,7 +11,7 @@ defmodule KojikiLM.L5ToL3VerdictTest do
       assert %L5ToL3Verdict{verdict: :repair, v_score: 0.5} =
                L5ToL3Verdict.new!(:repair, 0.5)
 
-      assert %L5ToL3Verdict{verdict: :halt, v_score: 0.0} = L5ToL3Verdict.new!(:halt, 0.0)
+      assert %L5ToL3Verdict{verdict: :halt, v_score: +0.0} = L5ToL3Verdict.new!(:halt, 0.0)
     end
 
     test "coerces integer v_score to float" do

@@ -74,16 +74,42 @@ byte-identical 検証は同じ精度で行える。コストを Go 版に近い�
 
 | Step | 内容 | 工数 | 状態 |
 |---|---|---|---|
-| 1 | Mix project + Bumblebee + Qwen3-Coder-Next load | 0.5d | 🟡 mix.exs の deps 配置のみ (comment-out) |
-| 2 | `KojikiLM.L3` GenServer (generate + sampling) | 1-2d | 🟡 stub のみ (interface 確定) |
-| 3 | `KojikiLM.L5` GenServer (`Code.eval_string` + ExUnit) | 1d | 🟡 stub のみ (空→halt / 非空→repair) |
+| 1 | Mix project + Bumblebee + Qwen3-Coder-Next load | 0.5d | 🟡 mix.exs の deps 配置のみ (comment-out)。本実装は RunPod A6000 待ち |
+| 2 | `KojikiLM.L3` GenServer (generate + sampling) | 1-2d | 🟡 stub のみ (Step 1 待ち) |
+| 3 | `KojikiLM.L5` GenServer (`Code.eval_string` + ExUnit) | 1d | ✅ **本実装完了** (subprocess + heuristic 二段、14 tests 緑) |
 | 4 | `KojikiLM.YomotsuHirasaka` (BEAM proc 境界の薄ラッパー) | 0.5d | ✅ **本実装完了** |
-| 5 | 型位置 bias (set-theoretic types からの抽出) | 1-2d | ⬜ 未着手 |
-| 6 | 機械的 REPAIR (`Mix.format` + AST + "did you mean" parser) | 0.5d | ⬜ 未着手 |
-| 7 | MultiPL-E elixir runner (humaneval/mbpp 共通) | 0.5d | ⬜ 未着手 |
-| 8 | 検証 + ablation (vanilla vs full の byte-identical) | 0.5d | ⬜ 未着手 |
+| 5 | 型位置 bias (set-theoretic types からの抽出) | 1-2d | ⬜ 未着手 (Elixir 1.20 待ち) |
+| 6 | 機械的 REPAIR (`Mix.format` + AST + "did you mean" parser) | 0.5d | ✅ **本実装完了** (`Code.format_string!` + hint パーサ、9 tests 緑) |
+| 7 | MultiPL-E elixir runner (humaneval/mbpp 共通) | 0.5d | ✅ **本実装完了** ([scripts/eval/elixir_eval.py](../scripts/eval/elixir_eval.py)、smoke 4 サンプル OK) |
+| 8 | 検証 + ablation (vanilla vs full の byte-identical) | 0.5d | ⬜ 未着手 (Step 1/2 完了後に走らせる) |
 
-## 2026-05-21 セッションで完了したもの (Step 4 + 骨格)
+## 2026-05-21 (午後) セッションで完了したもの (Step 3 / 6 / 7、Linux 検証)
+
+Linux + RTX 3060 + asdf 環境 (GPU 不要分のみ) で:
+
+- Erlang/OTP 27.3.4.11 + Elixir 1.18.4-otp-27 を asdf でユーザー領域に install
+- `mix.exs` の elixir 制約を `~> 1.20` → `~> 1.18` に緩和 (Step 5 着手時に戻す)
+- `.tool-versions` を `src_min_elixir/` に置いて asdf auto-switch
+- **Step 4 再検証**: 既存テスト 39/39 緑、compile warning 2 件 (handle_call の clause grouping / `0.0` パターン) を修正
+- **Step 3 本実装**: `lib/kojiki_lm/l5.ex`
+  - 評価フロー: 空 → :halt / `Code.string_to_quoted` → :repair (incomplete) / :halt (broken) / :ok → tests あれば `System.cmd("timeout 5 elixir tmp.exs")`、なければヒューリスティック
+  - subprocess 結果分類: exit 0 → :commit、AssertionError → :halt 0.2、CompileError → :repair 0.4、UndefinedFunctionError → :halt 0.25、timeout (124/137) → :halt 0.1
+  - tests を **L5 が所有** (tests_by_prompt_id) → L3 には絶対漏れない
+  - 14 tests: empty / 構文 4 種 / subprocess passing/failing/undef/compile-error/timeout / YomotsuHirasaka 経由 BEAM 境界 / start_link
+- **Step 6 本実装**: `lib/kojiki_lm/mechanical_repair.ex`
+  - `Code.format_string!/2` で整形 + `Code.string_to_quoted/2` の error から "did you mean" hint パース
+  - chain 構造で複数 tool を順次適用 (`[:format, :hint]` がデフォルト)
+  - 9 tests: format-only / hint-only / chain / 壊れた構文での graceful fallback / arity 2 限定 (tests を渡せないことの構造的保証)
+- **Step 7 本実装**: `scripts/eval/elixir_eval.py`
+  - go_eval.py を Elixir 用に port。`elixir <file>` + 5s timeout、exit code + stderr パターンで分類
+  - PRIMARY: test_pass_rate / SECONDARY: compile_pass_rate / TERTIARY': undefined_rate
+  - `--mechanical-repair` で `Code.format_string!` を subprocess で適用 (tests は context に渡さない、Goodhart 回避)
+  - smoke 4 サンプル (pass/wrong/undef/syntax_err) で classification 正常動作確認
+- **全体**: `mix test` で **62/62 緑** (Step 4 の 39 + Step 3 の 14 + Step 6 の 9)
+
+ローカルで検証できないのは Step 1/2/5/8 (GPU/A6000 必須 or Elixir 1.20 待ち)。
+
+## 2026-05-21 (午前) セッションで完了したもの (Step 4 + 骨格)
 
 [src_min_elixir/](../src_min_elixir/) に Mix project を新設。実装範囲は Step 4 本体
 (`KojikiLM.YomotsuHirasaka` GenServer + 型契約) と、Step 1-3 を後で埋めるための stub。
