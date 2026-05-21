@@ -78,10 +78,10 @@ byte-identical 検証は同じ精度で行える。コストを Go 版に近い�
 | 2 | `KojikiLM.L3` GenServer (generate + sampling) | 1-2d | 🟡 stub のみ (Step 1 待ち) |
 | 3 | `KojikiLM.L5` GenServer (`Code.eval_string` + ExUnit) | 1d | ✅ **本実装完了** (subprocess + heuristic 二段、14 tests 緑) |
 | 4 | `KojikiLM.YomotsuHirasaka` (BEAM proc 境界の薄ラッパー) | 0.5d | ✅ **本実装完了** |
-| 5 | 型位置 bias (set-theoretic types からの抽出) | 1-2d | ⬜ 未着手 (Elixir 1.20 待ち) |
+| 5 | **L5 ハルシネーション検出器拡張** (Gemini 精査由来 3 項目: ghost function / defstruct mismatch / hint field) | 1d | ⬜ **着手前提**: Step 1+2 完了 → Step 8 Phase 1 (Firewall byte-identical) **緑** を確認してから |
 | 6 | 機械的 REPAIR (`Mix.format` + AST + "did you mean" parser) | 0.5d | ✅ **本実装完了** (`Code.format_string!` + hint パーサ、9 tests 緑) |
 | 7 | MultiPL-E elixir runner (humaneval/mbpp 共通) | 0.5d | ✅ **本実装完了** ([scripts/eval/elixir_eval.py](../scripts/eval/elixir_eval.py)、smoke 4 サンプル OK) |
-| 8 | 検証 + ablation (vanilla vs full の byte-identical) | 0.5d | ⬜ 未着手 (Step 1/2 完了後に走らせる) |
+| 8 | 検証 (Phase 1: Firewall 物理隔離 byte-identical) + ablation (Phase 2: 4 mode pass@1) | 0.5d + 0.5d | ⬜ 未着手 (Step 1/2 完了後に走らせる)。**Phase 1 → Step 5 → Phase 2 の順** |
 
 ## 2026-05-21 (午後) セッションで完了したもの (Step 3 / 6 / 7、Linux 検証)
 
@@ -194,11 +194,49 @@ mix format
 - 注意: `Code.eval_string/3` を BEAM 内部で直接呼ぶと評価器側のプロセス heap に code が
   ロードされて Firewall の主張が弱まる。**必ず別 OS プロセス (`System.cmd`) を経由**
 
-### Step 5 — 型位置 bias (1-2d)
+### Step 5 — L5 ハルシネーション検出器拡張 (1d)
 
-- Elixir 1.20 set-theoretic types から「現在のスコープで参照可能な型・関数 atom」を抽出
-- `KotodamaDecoder` Elixir 相当を実装 — Go 版 ([src_min_go/kojiki_lm/kotodama_decoder.py](../src_min_go/kojiki_lm/kotodama_decoder.py)) の構造を移植
-- ただし **マスク (-inf) は採らない** ([feedback-kotodama-mask-counterproductive](../C:/Users/mimat/.claude/projects/c--Users-mimat-Yamato-no-Mikoto/memory/feedback-kotodama-mask-counterproductive.md))。soft bias `+k` のみ
+**着手条件**: Step 1 + Step 2 + Step 8 Phase 1 (Firewall byte-identical 検証) が緑になってから。
+先に物理隔離が成立していることを確認してから L5 を改造する (Firewall の効果と L5 改善効果を切り分けるため)。
+
+Gemini 精査 (2026-05-21) で Julia 論文の Elixir 翻案案を検討した結果、本プロジェクト
+(pre-trained Qwen3-Coder-30B + frozen) で**取り込めるのは以下 3 項目のみ**。
+モデル architecture 改造 / fine-tuning / auxiliary loss 系の提案は scope 外。
+
+#### Step 5a — Ghost function checker (AST レベル)
+
+- `Code.string_to_quoted/1` で生成テキストを AST 化
+- AST walk で `{:., _, [{:__aliases__, _, mod}, fun]}` 形態の関数呼び出しを全部抽出
+- 各 `(Mod, fun, arity)` について `Code.ensure_loaded?(Mod)` + `function_exported?(Mod, fun, arity)` で存在確認
+- 未定義の関数呼び出しが見つかれば verdict = `:halt` v_score = 0.15、`hint = "Hint: #{Mod}.#{fun}/#{arity} is not defined. Did you mean ...?"`
+- 既存の subprocess `UndefinedFunctionError` 検出 ([l5.ex:230-259](../src_min_elixir/lib/kojiki_lm/l5.ex#L230-L259)) と冗長だが、**こちらは実行前**に検出できるため early HALT が効く
+
+#### Step 5b — defstruct ↔ %X{field:} mismatch checker
+
+- AST walk で `{:defstruct, _, [fields]}` を集めて module ごとに field atom set を構築
+- 同じ AST で `{:%{}, _, [{field_atom, _}, ...]}` を含む `{:%, _, [{:__aliases__, _, mod}, ...]}` ノードを走査
+- 未定義 field を参照していれば verdict = `:repair` v_score = 0.4、`hint = "Hint: Struct %#{Mod}{} does not contain :#{field}. Check defstruct."`
+- repair で hint を L3 に返し、prompt 末尾追加 → 再 decode
+
+#### Step 5c — `%L5ToL3Verdict{}` に `hint: String.t() | nil` field 追加
+
+- 現在の verdict は `verdict + v_score` のみ。修復ヒントを構造的に持たせる
+- 隔離契約は維持: hint は **L5 が生成した自然言語文字列**であって、評価器内部状態 (テストケース・累積統計) は載せない (Goodhart 回避)
+- L3 側は `verdict.hint` を prompt の末尾に追加して decode を再起動 (= [project-firewall-purpose](../C:/Users/mimat/.claude/projects/c--Users-mimat-Yamato-no-Mikoto/memory/project-firewall-purpose.md) の修正 E 相当)
+- `%L5ToL3Verdict{}` の existing tests (`L5ToL3VerdictTest`) は `hint: nil` でも通る後方互換にする
+
+#### 採用しなかった Gemini 提案 (記録)
+
+| 不採用 | 理由 |
+|---|---|
+| @spec 整合性 = Julia type stability 代替 | MultiPL-E elixir prompts に @spec なし、Dialyzer の success typing は欠如を flag しない |
+| 3-phase generation (Module → Specs → Implementations) | benchmark prompt 構造と非整合、可比性を失う |
+| Definition-aware attention (Pathway 2) | architecture 改造、scope 外 |
+| Type-Hierarchy Embedding (Ecto/Phoenix 静的ハッシュ) | fine-tuning 前提、benchmark は Ecto/Phoenix 不使用 |
+| Pipeline 型伝播 auxiliary loss | training 前提、Elixir は値伝播 (型伝播ではない) |
+| TsukuyomiTypeHead 直接移植 | Qwen3-Coder に第二 head 無し、再訓練必要 |
+
+旧 Step 5 の「Elixir 1.20 set-theoretic types からの position 抽出」は**棚上げ** (1.20 stable 待ち + 動的型現実とのズレで効果検証経路が不明確)。
 
 ### Step 6 — 機械的 REPAIR (0.5d)
 
@@ -215,15 +253,43 @@ mix format
 - `scripts/eval/run_yamato_min_elixir.py` (Python runner) を新規作成、`run_yamato_min_go.py` を元に Elixir 用に移植
 - `scripts/eval/judge_win_condition_elixir.py` を `judge_win_condition_go.py` から移植
 
-### Step 8 — 検証 + ablation (0.5d)
+### Step 8 — 検証 + ablation (Phase 1 + Phase 2)
 
-- 4 mode を取る (Go 版 ablation と同じ構成):
-  - baseline (bare Bumblebee `Bumblebee.Text.generation`)
-  - no-kotodama (KotodamaDecoder elixir, bias=OFF, firewall=ON)
-  - no-firewall (KotodamaDecoder elixir, bias=ON, firewall=OFF)
-  - full (KotodamaDecoder elixir, bias=ON, firewall=ON)
-- vanilla vs no-kotodama の **byte-identical** 確認 (Firewall の悪影響不在)
-- pass@1 / mix compile rate の比較
+**実行順序が重要**: Phase 1 → Step 5 → Phase 2。Phase 1 で Firewall の物理隔離を先に
+確認してから L5 改造に入り、Phase 2 で改造後の効果を測る。
+
+#### Ablation の 2 軸
+
+| 軸 | OFF | ON |
+|---|---|---|
+| A. Firewall pathway | L3 が完成テキストを自分で済ます (subprocess 検査せず) | L3 → YomotsuHirasaka → L5 (別 PID) で verdict 取得 |
+| B. L5 拡張 (Step 5) | L5 は subprocess + heuristic 評価のみ (現状) | L5 に ghost function / defstruct mismatch checker と hint 追加 |
+
+#### Phase 1 — Firewall 物理隔離 byte-identical 検証 (0.5d、Step 5 着手前)
+
+- 2 mode のみ比較:
+  - `bare` = bare Bumblebee `Bumblebee.Text.generation` (A=OFF)
+  - `firewall-only` = L3 → YomotsuHirasaka → L5(現状の subprocess + heuristic) (A=ON, B=OFF)
+- humaneval-elixir 161 問 × 3 seed
+- **expected: 161/161 × 3 = 483/483 で raw_completion byte-identical**
+  - Go 版で 374/374 達成済 ([sampling_path_issue.md](sampling_path_issue.md))、BEAM 隔離により Elixir は **より低コストで達成できるはず**
+  - 不一致が出たら Firewall pathway に物理サイドチャネルがある証拠 = bug
+- ここで Win Condition 一次基準が達成される。**Step 5 はこの後**
+
+#### Phase 2 — 4 mode ablation (0.5d、Step 5 完了後)
+
+| Mode | A: Firewall | B: L5 拡張 | 目的 |
+|---|---|---|---|
+| `bare` | OFF | — | LM 単体の baseline pass@1 / undef rate |
+| `firewall-only` | ON | OFF | Firewall pathway の効果 (Phase 1 と同設定、pass@1 で見る) |
+| `l5-enhanced-no-fw` | OFF | ON | Step 5 改造を Firewall なしで適用、isolation の対照 |
+| `full` | ON | ON | 完成形 |
+
+- 評価指標 (優先順):
+  1. **undefined-symbol rate / compile pass rate** (= hallucination 軸、本プロジェクト主目的の補助) — Step 5 拡張で下がるか
+  2. pass@1 (副次)
+  3. byte-identical 保持 — `bare` vs `firewall-only` (Phase 1 と同じ)、`l5-enhanced-no-fw` vs `full` (B 軸 ON でも Firewall が悪影響を持たないこと)
+- 二次基準: Step 5 拡張で undef rate が下がりかつ pass@1 が下がらないこと (Goodhart 回避)
 
 ## 残る不確定要素
 
@@ -242,19 +308,22 @@ mix format
 本 pivot の主目的が **Firewall を BEAM プロセス境界で完成させる**ことなので、Win Condition も
 LM 性能ではなく Firewall の隔離特性を中心に置く:
 
-### 一次基準 (Firewall 検証 — 必達)
+### 一次基準 (Firewall 検証 — 必達、Step 8 Phase 1 で達成)
 
-1. **vanilla (no-kotodama) vs no-firewall の byte-identical 完全一致** (humaneval-elixir 161 問 × 3 seed)
-   - Firewall を入れても生成への観測可能な悪影響が無いこと
+1. **`bare` vs `firewall-only` の byte-identical 完全一致** (humaneval-elixir 161 問 × 3 seed = 483 サンプル)
+   - Firewall pathway を入れても生成への観測可能な悪影響が無いこと
    - Go 版で 374/374 達成済 ([sampling_path_issue.md](sampling_path_issue.md))、Elixir では BEAM 隔離により **より低コスト**で達成できるはず
 2. **`YomotsuHirasaka` の型契約テストが ExUnit で 100% 緑**
    - `is_binary/1` guard で `Nx.Tensor` 等が構造的に reject されること
    - evaluator が別 PID で動き、message passing 経由でしか verdict が流れないこと
 
-### 二次基準 (LM 性能 — 参考値)
+### 二次基準 (ハルシネーション軸 — Step 8 Phase 2 で測定)
 
-- humaneval-elixir 161 問 × 3 seed × 4 mode (baseline / no-kotodama / no-firewall / full)
-- pass@1 の **mode 間差** を観測。Go 版 mbpp-go で attribution 未解決だった「言霊 bias 単独寄与」の Elixir での挙動を確認 ([project-go-roadmap-state](../C:/Users/mimat/.claude/projects/c--Users-mimat-Yamato-no-Mikoto/memory/project-go-roadmap-state.md))
+- humaneval-elixir 161 問 × 3 seed × 4 mode (`bare` / `firewall-only` / `l5-enhanced-no-fw` / `full`)
+- **undefined-symbol rate / compile pass rate** の mode 間差を優先指標とする
+  - 本プロジェクトの設計意図では型予測 = ハルシネーション検出 (= 未定義シンボル / 型不整合の早期検知 → Firewall HALT/REPAIR signal) であり、pass@1 向上ではない
+  - Step 5 拡張 (ghost function + defstruct checker) で undef rate が下がるかが本来の効果指標
+- pass@1 は副次。Go 版 mbpp-go で attribution 未解決だった「言霊 bias 単独寄与」の Elixir 版での挙動を観察するに留める
 
 **Go 版との pass@1 比較は行わない**:
 - LM が違う (Qwen2.5-Coder-7B vs Qwen3-Coder-30B-A3B)、量子化が違う (bf16 vs int8)、言語が違う (Go vs Elixir)、ハードが違う (A5000 vs A6000)
