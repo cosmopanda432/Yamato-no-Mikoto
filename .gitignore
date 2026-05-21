@@ -32,6 +32,18 @@ src/ts_tools/dist/
 # Go build outputs
 src_min_go/go_tools/bin/
 
+# Elixir / Mix build outputs (src_min_elixir)
+src_min_elixir/_build/
+src_min_elixir/cover/
+src_min_elixir/deps/
+src_min_elixir/doc/
+src_min_elixir/.fetch
+src_min_elixir/.elixir_ls/
+src_min_elixir/config/*.secret.exs
+erl_crash.dump
+*.ez
+*.beam
+
 # Run logs (RunPod bench)
 *.log
 
