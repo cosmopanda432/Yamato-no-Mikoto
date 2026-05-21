@@ -111,8 +111,10 @@ def format_repair(text: str, elixir_bin: str, timeout_sec: float = 5.0) -> Repai
 
     L5 内部の決定論的 REPAIR。LLM は呼ばない。
     """
+    # 注: `:all` を使うのは Elixir 1.12 互換のため (1.13+ では `:eof` が標準だが、
+    # Ubuntu 22.04 apt bundled は Elixir 1.12.2 で `:eof` 未対応)。
     one_liner = (
-        "IO.read(:stdio, :eof) "
+        "IO.read(:stdio, :all) "
         "|> Code.format_string!() "
         "|> IO.iodata_to_binary() "
         "|> IO.write()"

@@ -58,8 +58,10 @@ class RepairResult:
 
 # Elixir スクリプト本体。stdin から source を読んで Code.format_string! で整形し
 # stdout に出す。失敗時は exit 1 + stderr にエラーを出す。
+# 注: `:all` を使うのは Elixir 1.12 互換のため (1.13+ では `:eof` が標準で `:all` は deprecated)。
+# Ubuntu 22.04 apt bundled Elixir が 1.12.2 なので最低互換を保つ。
 _FORMAT_SNIPPET = """
-source = IO.read(:stdio, :eof)
+source = IO.read(:stdio, :all)
 try do
   formatted = source |> Code.format_string!() |> IO.iodata_to_binary()
   IO.write(formatted)
