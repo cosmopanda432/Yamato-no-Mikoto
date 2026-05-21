@@ -3,6 +3,29 @@
 **作成 2026-05-21**。src_min_elixir/ (Mix project) の中止 ([docs/旧ドキュメント/roadmap_min_elixir.md](旧ドキュメント/roadmap_min_elixir.md))
 を受けて、Python ベースで Elixir をターゲット言語にする新計画。実装は `src_min_eli2/`。
 
+## ✅ 2026-05-21 一次基準達成 (humaneval-elixir 161 問 × seed 0)
+
+**Firewall 物理隔離: 161/161 byte-identical (100%)** — `firewall-off` vs `firewall-on` で
+completion / raw_completion ともに完全一致。Go 版 mbpp-go 374/374 達成
+([sampling_path_issue.md](sampling_path_issue.md)) の Elixir target 再現完了。
+
+| metric | baseline (model.generate) | firewall-* (両 mode 同じ) | Δ |
+|---|---|---|---|
+| pass@1 | 26.71% (43/161) | 28.57% (46/161) | +1.86pp |
+| compile pass rate | 68.32% (110/161) | 72.05% (116/161) | +3.73pp |
+| **undef rate★** | 5.59% (9/161) | **2.48% (4/161)** | **−3.11pp** ✅ |
+| assertion failure | 22.36% | 26.09% | +3.73pp |
+
+★ hallucination 検出本来の効果指標 ([feedback-type-prediction-is-hallucination-detection](../C:/Users/mimat/.claude/projects/c--Users-mimat-Yamato-no-Mikoto/memory/feedback-type-prediction-is-hallucination-detection.md))。
+
+setup: Qwen2.5-Coder-7B + 4bit + RunPod RTX 4090 24GB / Ubuntu 22.04 / CUDA 12.4。
+setup 80 秒 + smoke 51 秒 + smoke-fix-d 92 秒 + baseline 65 秒 + pilot 1027 秒 = 全 ~24 分。
+
+副次的発見 (修正 H = FirewallDecoder の token-level stop_token early-stop):
+- baseline は max_new_tokens=256 まで生成後 truncate、firewall-* は stop_token 検出で早期 stop
+- 早期 stop で test driver 領域の汚染を防ぎ pass@1 / compile rate が改善
+- 1 seed のみのため統計検定不可。3 seed × 95% CI 検定は将来課題
+
 ## なぜハイブリッドか
 
 src_min_elixir/ の Mix project 路線で発覚した: **Elixir LM エコシステム (Bumblebee 0.7.0) は
