@@ -273,6 +273,34 @@ byte-identical 100% が証明したのは「firewall を入れても生成への
 - [ ] `4a5992b` コミットの主張も同様 (humaneval-go の Win も sampler 差由来の可能性大)
 - [x] `memory/project-firewall-purpose.md` → "byte-identical = 悪影響不在" の限定を追記済 (2026-05-21)
 
+### 修正 E 代替: 機械的 REPAIR の試行と結果 (2026-05-21)
+
+LLM-in-loop の REPAIR (元 修正 E プラン) は循環的処理になりがちなので、代替として
+**L5 内部の機械的修復 (`goimports`)** を実装した (`scripts/eval/go_eval.py
+--mechanical-repair`)。L3 (`KotodamaDecoder`) は触らず、L3→L5 経路だけを使う。
+tests は repair の context に含めない (Goodhart 回避)。
+
+| | repair OFF | repair ON |
+|---|---|---|
+| go build | 100% | 100% |
+| go vet | 73.26% | 73.26% |
+| go test | 50.00% (187) | 50.27% (188) |
+| goimports applied | — | **0/374** |
+
+**結論: mbpp-go では surface area ゼロ**。`goimports` は 1 件も適用されず、
+test pass の 1 問差は `mbpp_130_max_occurrences` の Go map iteration flake
+(過去確認済) で repair とは無関係。
+
+理由: mbpp-go の prompt は既に必要 import を含む形で来るため、LM が import を
+追加/削除する余地が構造的に発生しない。`build_ok=100%` (型ハルシ無し) が既に
+達成されているのも同じ理由による。
+
+実装は repository に残置 — 別 dataset (swebench 等で missing import が頻出
+するもの) や別 repair 戦略 (`}` バランス補完 / `return zero_value` 挿入 / gopls
+codeAction) で活きる可能性あり。隔離契約 (L3↔L5 text-only) は保持されている。
+
+データスナップショット: `data/eval/results/mbpp-go.yamato_min_go.full.seed0.repair-ablation/`
+
 ## 過去のコミット履歴との関係
 
 - `4a5992b` (M6 Win Condition ACHIEVED): pass@1 +7.14pp / vet +15.37pp の Win 主張。
