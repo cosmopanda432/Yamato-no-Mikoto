@@ -1,4 +1,15 @@
-# src_min_elixir
+# src_min_elixir 【中止 2026-05-21、保存のみ】
+
+> ⛔ **本 Mix project 路線は中止**。Bumblebee 0.7.0 が Qwen3 MoE / Qwen2 系を未対応のため
+> Step 1 (LM load) 不可。詳細は [docs/旧ドキュメント/roadmap_min_elixir.md](../docs/旧ドキュメント/roadmap_min_elixir.md) の
+> 「中止理由」セクション参照。
+>
+> 新計画 = `src_min_eli2/` (Python + Elixir target ハイブリッド、Firewall は src_min_go 再利用)。
+> 詳細 [docs/roadmap_eli2.md](../docs/roadmap_eli2.md)。
+>
+> 本フォルダは **「Firewall を BEAM プロセス境界で書けた証拠」** として保存。62 tests 緑、
+> Step 3 (L5) / Step 4 (YomotsuHirasaka) / Step 6 (機械的 REPAIR) / Step 7 (MultiPL-E runner) 実装済。
+> 将来 Bumblebee が Qwen2/Qwen3 MoE をサポートした時に Step 1 だけ書けば再起動可能。
 
 yamatoLLM Elixir 版 — Firewall (黄泉比良坂) を **BEAM プロセス境界** で実装する pivot 試験。
 
@@ -21,7 +32,7 @@ yamatoLLM Elixir 版 — Firewall (黄泉比良坂) を **BEAM プロセス境�
 | 7 | MultiPL-E elixir runner (`elixir <file>` CLI ベース、`mix test` 不要) | **本実装** ([scripts/eval/elixir_eval.py](../scripts/eval/elixir_eval.py)) |
 | 8 | 検証 + ablation (vanilla vs full の byte-identical) | 未着手 (Step 1/2 待ち) |
 
-**2026-05-21 確定方針** (詳細 [docs/roadmap_min_elixir.md](../docs/roadmap_min_elixir.md)):
+**2026-05-21 確定方針** (詳細 [docs/旧ドキュメント/roadmap_min_elixir.md](../docs/旧ドキュメント/roadmap_min_elixir.md)):
 
 - **LM**: Qwen3-Coder-**30B**-A3B-Instruct (80B Next は Bumblebee の int4/GGUF 未対応のためコスト 6× で除外)
 - **量子化**: weight-only int8 (`Axon.Quantization`)

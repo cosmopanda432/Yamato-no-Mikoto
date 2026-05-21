@@ -1,4 +1,10 @@
-# Roadmap (Minimum) — yamatoLLM Elixir 版
+# Roadmap (Minimum) — yamatoLLM Elixir 版 **【中止 2026-05-21】**
+
+> ⛔ **本 pivot は 2026-05-21 に中止**。
+> Bumblebee 0.7.0 (現行最新) では Step 1 (Bumblebee + Qwen 系 load) を満たせる組み合わせが
+> 存在しないことが pod 上の実機検証で確定。代替モデルもすべて未対応。詳細は本 doc 末尾の
+> 「中止理由」セクション参照。**Step 3/4/6/7 (62 tests 緑) のコード/Mix project は保存**
+> (Firewall を BEAM プロセス境界で書ける証拠として価値あり)。
 
 主目的: **L3 ↔ L5 の絶対的隔離壁 (Firewall / 黄泉比良坂) を BEAM プロセス境界で完成
 させる** (`project-firewall-purpose.md` / `project-elixir-pivot-viability.md` 参照)。
@@ -6,7 +12,7 @@
 Go 版 ([docs/roadmap_min_go.md](roadmap_min_go.md)) で「言霊 bias の単独寄与が不可視」
 だった一方、**Firewall の隔離契約は 374/374 byte-identical で確認済** ([sampling_path_issue.md](sampling_path_issue.md))。
 本ターゲットは「Firewall を Python の `__post_init__` で **手で** 守る」から「言語/ランタイム
-が **構造的に** 守る」へのレベルアップ。
+が **構造的に** 守る」へのレベルアップ **を狙ったが、LM 側のエコシステム未成熟で頓挫**。
 
 ## なぜ Go から Elixir へ
 
@@ -333,7 +339,82 @@ LM 性能ではなく Firewall の隔離特性を中心に置く:
 ## 関連メモリ
 
 - `project-firewall-purpose.md` — Firewall = 隔離壁が本来目的、HALT/REPAIR は副次
-- `project-elixir-pivot-viability.md` — 技術的ボトルネック評価
+- `project-elixir-pivot-viability.md` — 技術的ボトルネック評価 (本中止で前提が崩れたため要再検証)
 - `project-go-roadmap-state.md` — Go 版の現状 (attribution 未解決のまま国譲り)
 - `feedback-kotodama-mask-counterproductive` — −inf マスクは TS で逆効果、soft bias 方針は Go/Elixir 共通
 - [sampling_path_issue.md](sampling_path_issue.md) — Go 版の修正 D (物理サイドチャネル除去) ログ
+
+## 中止理由 (2026-05-21、RunPod RTX 6000 Ada 上の実機検証で確定)
+
+memory `project-elixir-pivot-viability.md` の「技術的ボトルネックほぼ無し」評価は **誤り**だった。
+実機 setup で発覚した複合的 blocker:
+
+### 1. Bumblebee 0.7.0 が我々が使いたい LM を全部 サポートしていない
+
+`bumblebee/lib/bumblebee.ex` の `@transformers_class_to_model` に登録されている causal LM:
+Bart / Gemma / Gemma3 / GptBigCode / GptNeoX / Llama / MBart / Mistral / ModernBertDecoder / Phi / Phi3 / **Qwen3 (dense のみ)** / Roberta / SmolLM3 / XLMRoberta。
+
+| LM 候補 | architecture (config.json) | Bumblebee 0.7.0 対応 |
+|---|---|---|
+| Qwen3-Coder-30B-A3B-Instruct (1st choice) | `Qwen3MoeForCausalLM` | ❌ Qwen3 MoE 未対応 (dense のみ) |
+| Qwen3-Coder-Next 80B-A3B | `Qwen3NextForCausalLM` (MoE 派生) | ❌ 同上 |
+| Qwen2.5-Coder-7B/32B (Go/TS 版 LM、互換性 desired) | `Qwen2ForCausalLM` | ❌ Qwen2 系 module 自体無し |
+| StarCoder2-15B (代替 coder 候補) | `Starcoder2ForCausalLM` (model_type=`starcoder2`) | ❌ 新世代、GQA/SWA で別アーキ、未対応 |
+| (旧) StarCoder / SantaCoder | `gpt_bigcode` | ✅ ただし code 性能古い |
+| Qwen3-14B / 32B dense | `Qwen3ForCausalLM` | ✅ ただし code 特化なし |
+| CodeLlama 7B/13B/34B | `LlamaForCausalLM` | ✅ ただし Llama license |
+
+**Bumblebee 純血で「code 特化 + 現行 Qwen系」を動かす経路が無い**。
+
+### 2. EXLA 0.12 + CUDA 12.4 pod の互換性問題 (解決済だが手間)
+
+setup 中に判明した必要パッチ:
+- `libnvshmem3-cuda-12` apt install + ldconfig 登録 (NVSHMEM 3.6.5)
+- `libcudnn9-cuda-12` apt install (cuDNN 9)
+- `libnvrtc-builtins.so.12.4` → `.so.12.9` の symlink (CUDA 12.9 期待)
+- `nvshmem_transport_ibrc.so.5` → `.so.3` の symlink (ABI mismatch を symlink で凌ぐ)
+- `libnccl2` を 2.21.5 → 2.30.4-1+cuda12.9 にアップグレード (`ncclCommWindowDeregister` symbol 必要)
+
+EXLA 0.12 は CUDA 12.9 + NCCL 2.30+ + NVSHMEM 3.x 想定でビルドされているため、CUDA 12.4 pod では
+これら全部を個別に対処する必要があり、re-pod 時に再現性が低い。
+
+### 3. 全部終わってからの blocker (= LM load 不可) の被害が大きい
+
+setup 約 30 分 (Erlang 22.8min + model DL 4min + その他) を消費した後、smoke 1 行目で:
+```
+** (ArgumentError) could not match the class name "Qwen3MoeForCausalLM" to any of the supported models
+```
+で停止。code path 上のごく早い段階で死ぬので「もう少し進めば動く」感触が無く、根本対策
+(Bumblebee fork) が必要になることが pivot 開始から 5h 後に判明。
+
+### 4. 投資判断の修正
+
+memory `project-elixir-pivot-viability.md` の **5-7 day 投資** 見積もりは Bumblebee 側の
+LM 対応工数 (Qwen3 MoE adapter or Qwen2 adapter の Elixir 移植) を含まない。これを足すと
+**実態は 10-15 day 投資**で、Go 版に戻って attribution 解決する方が ROI 高い。
+
+### 完了済の成果物 (保存)
+
+中止時点で動いていたもの:
+- `src_min_elixir/` Mix project 一式
+- 62 tests 緑: Step 3 (L5 subprocess + heuristic 評価器) / Step 4 (YomotsuHirasaka BEAM 境界 Firewall) / Step 6 (Mix.format + hint パーサ)
+- `scripts/eval/elixir_eval.py` (Python orchestrator、`elixir <file>` 実行 + classify)
+- `scripts/runpod_bench_elixir.sh` (RunPod setup runbook)
+- `scripts/smoke_qwen3.exs` (Step 1 smoke、Bumblebee Qwen MoE/Qwen2 が来たら再利用可)
+
+これらは「Firewall を BEAM プロセス境界で書ける」ことの**コード上の証拠**として残す。将来
+Bumblebee が Qwen2/Qwen3 MoE をサポートしたら、Step 1 だけ実行すれば pipeline 再起動可能。
+
+### 教訓 (durable knowledge)
+
+「動的型言語 + LM エコシステム」の組み合わせは **LM 側エコシステム**が律速であり、言語の
+理論的優位 (Erlang/Elixir の BEAM プロセス境界による Firewall 自動成立) よりも、 **その
+言語向けの LM SDK がどこまで現行モデルを追えているか** が pivot の成否を決める。
+
+設計時点で確認すべきだったこと:
+- 使いたい LM の `config.json` の `architectures` が SDK に登録されているか
+- SDK の最新リリースで対応されているのか、Issue/PR レベルなのか
+- CUDA / cuDNN / NCCL の pod 環境と SDK ビルドの整合性
+
+これらは Python (transformers) ではほぼ全 LM がデフォルト対応のため見過ごしがち。
+Elixir/Bumblebee / Rust/Candle / Go/llama.cpp など **後発 SDK** に行く前にチェックリスト化すべき。

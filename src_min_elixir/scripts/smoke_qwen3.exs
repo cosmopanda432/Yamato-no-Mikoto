@@ -7,7 +7,7 @@
 #   QUANTIZE    "int8" | "none" (default: int8)
 #   MAX_TOKENS  生成最大 token 数 (default: 32)
 #   PROMPT      生成 prompt (default: シンプルな Elixir 関数定義)
-#   XLA_TARGET  EXLA backend target (default: cuda120)
+#   XLA_TARGET  EXLA backend target (cuda12 for CUDA 12.x, cpu for CPU-only)
 #
 # 観測点:
 #   1. Bumblebee.load_model が Qwen3 系で通るか (v0.7.0 で追加されたサポート)
