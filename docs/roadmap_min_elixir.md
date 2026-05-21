@@ -23,41 +23,52 @@ Go 版で苦労した:
 技術的ボトルネックはほぼ無いと評価済 (`project-elixir-pivot-viability.md`)。投資判断
 として **5-7 day**。
 
-## 構成
+## 構成 (2026-05-21 確定: option A = 30B + int8 + A6000)
 
 | Component | 採用 | 備考 |
 |---|---|---|
-| LM (1st choice) | Qwen3-Coder-Next 80B (3B active MoE) | SWE-Bench Verified 70%+、Apache 2.0。**Q4 で ~48 GB 必要 → A5000 24GB 不可、A6000 48GB 以上が必須** |
-| LM (fallback) | Qwen3-Coder-30B-A3B | 同 MoE アーキの小型版、Q4 で ~17 GB → A5000 24GB で全 VRAM 推論可 |
-| 推論 | Bumblebee + Nx + EXLA | bf16/fp16/MoE 対応 |
-| Dataset | MultiPL-E humaneval-elixir (161) / mbpp-elixir (397) | Go と同じインフラ |
+| LM | **Qwen3-Coder-30B-A3B-Instruct** (3B active MoE) | Bumblebee v0.7.0 (2026-05-16) で Qwen3 サポート追加済 ([PR #423](https://github.com/elixir-nx/bumblebee/pull/423))。SWE-Bench スコアは 80B 版 (70%+) に劣るが Bumblebee 純血で動かせる |
+| 量子化 | **int8 (Axon.Quantization)** | Bumblebee 公式が現在サポートする唯一の量子化。bf16 比 半分の VRAM |
+| 推論 | Bumblebee + Nx + EXLA | int8 weight-only quantization、bf16 activation |
+| GPU | **A6000 48GB** ($0.49/h on RunPod) | 30B int8 ~30-35 GB + KV cache + activation で A6000 に収まる |
+| Dataset | MultiPL-E humaneval-elixir (161) / mbpp-elixir (397) | `elixir <file>` CLI で `.exs` を直接実行 (5s timeout、exit code ベース、`mix test` 不要) |
 | L3 / L5 | GenServer 2 つ | プロセス境界 = Firewall (VM 保証) |
 | `YomotsuHirasaka` | GenServer + guard | `is_binary/1` 等で型不適合を VM レベルで reject |
 | 機械的 REPAIR | `Mix.format` + AST 変形 + コンパイラエラーパース | Go の `goimports` より surface area 広い |
 | 型位置 bias | `Code.Typespec` / set-theoretic types 由来 position 抽出 | 1.20 で実用 |
 
-## GPU 要件 (2026-05-21 web 確認)
+## GPU 要件 (2026-05-21 web 確認、Bumblebee 量子化サポート判明後の正直版)
 
-`project-runpod-gpu-choice.md` の「A5000 が最適コスパ」は **Qwen2.5-Coder-7B (Go 版) 限定**で
-あり、本 Elixir pivot ではモデルが 10× 大きいため成立しない。
+**重要**: Bumblebee v0.7.0 (2026-05-16) は **int4 / GGUF を未サポート** ([Issue #249](https://github.com/elixir-nx/bumblebee/issues/249) / [#413](https://github.com/elixir-nx/bumblebee/issues/413) Open のまま)。Axon.Quantization の weight-only int8 のみ可。
+したがって Q4 前提の VRAM 計算は無効で、**実態は int8 ベース**で見る必要がある。
 
-| GPU | VRAM | Qwen3-Coder-Next 80B Q4 (~48 GB) | Qwen3-Coder-30B Q4 (~17 GB) | RunPod 価格目安 |
+| GPU | VRAM | Qwen3-Coder-30B int8 (~30-35 GB) | Qwen3-Coder-Next 80B int8 (~80-90 GB) | RunPod 価格目安 |
 |---|---|---|---|---|
-| A5000 | 24 GB | ❌ expert offload 必須・遅い | ✅ 全 VRAM 推論可 | $0.30/h |
-| A6000 | 48 GB | ✅ Q4 が全 VRAM に乗る (最安ライン) | ✅ 余裕 | $0.49/h |
-| A100 40GB | 40 GB | △ Q4 ぎりぎり | ✅ | $1.19/h |
-| A100 80GB | 80 GB | ✅ Q8 まで可 | ✅ | $1.89/h |
-| H100 80GB | 80 GB | ✅ bf16 一部可 | ✅ | $2.69/h |
+| A5000 | 24 GB | ❌ 乗らない | ❌ | $0.30/h |
+| **A6000** | **48 GB** | **✅ 推奨ライン** | ❌ | **$0.49/h** |
+| A100 40GB | 40 GB | △ KV cache 込みで微妙 | ❌ | $1.19/h |
+| A100 80GB | 80 GB | ✅ 余裕 | △ ぎりぎり | $1.89/h |
+| H100 80GB | 80 GB | ✅ 速い | △ ぎりぎり | $2.69/h |
 
-**現在の方針**:
+**A5000 24GB は Elixir pivot の全 path で off-table**。Go 版 ($0.30/h A5000) と直接コスパ比較できない。
 
-1. **Step 1-3 (機構動作確認)** は **Qwen3-Coder-30B-A3B + A5000 24GB** で行う。SWE-Bench
-   スコアは 80B 版に劣るが、Firewall / 言霊 / REPAIR の機構が動くことの確認だけならこれで十分。
-2. **Step 7-8 (本ベンチ)** は **Qwen3-Coder-Next 80B + A6000 48GB** で取る。Go 版に
-   合わせた pass@1 +5pp の Win Condition は本来 1st choice のモデルで評価したい。
-3. **Bumblebee の int4 / GGUF サポート確認**は Step 1 の最優先タスク。Nx/EXLA で
-   Q4_K_M が動かない場合は **bf16 で 30B 版 (~60 GB) → A100 80GB に格上げ**、もしくは
-   GGUF を直接 BEAM から扱う代替経路 (NIF 経由の llama.cpp 呼び出し) を検討。
+`project-runpod-gpu-choice.md` の「A5000 が最適コスパ」は **Qwen2.5-Coder-7B (Go/TS 版) 限定**で
+あり、本 Elixir pivot では成立しない。
+
+## 選択肢の検討と option A 採用理由
+
+3 つの選択肢があった (2026-05-21 検討):
+
+| 選択肢 | 構成 | コスパ | 採否 |
+|---|---|---|---|
+| **A: 30B + int8 + A6000** | $0.49/h、Bumblebee 純血 | ◎ | **採用** |
+| B: 80B + int8 + A100 80GB | $1.89/h、Bumblebee 純血 | △ Go 版 ($0.30/h) の 6 倍コスト | 不採用 |
+| C: 80B + Q4 + NIF→llama.cpp | $0.49/h (A6000)、Bumblebee 純血放棄 | ○ 速いがアーキ複雑、推論パスが C プロセス経由 | 不採用 |
+
+**A 採用理由**: 本 pivot の主目的は「Firewall を BEAM プロセス境界で完成させる」ことであり、
+LM 自体の絶対性能 (SWE-Bench 70%+) は副次。30B 版でも `is_binary/1` guard / GenServer 境界 /
+byte-identical 検証は同じ精度で行える。コストを Go 版に近い水準 ($0.49/h vs $0.30/h) に
+抑えられるため、ablation を多数回せる。
 
 ## 8 ステップ計画 (合計 5-7 day)
 
@@ -124,24 +135,21 @@ mix format
 
 ## これからの予定
 
-### Step 1 — Bumblebee 接続 (0.5d → 1d に修正)
+### Step 1 — Bumblebee 接続 (1d)
 
-- [mix.exs](../src_min_elixir/mix.exs) の `deps/0` で `:bumblebee, :nx, :exla` を解放
-- [lib/kojiki_lm/config.ex](../src_min_elixir/lib/kojiki_lm/config.ex) を本実装。`model_repo`
-  のデフォルトは **`"Qwen/Qwen3-Coder-30B-A3B-Instruct"` (fallback, A5000 で動く)** に変更
+- [mix.exs](../src_min_elixir/mix.exs) の `deps/0` で `:bumblebee, :nx, :exla` を解放 (`{:bumblebee, "~> 0.7"}` 以上を要求 — Qwen3 サポートは v0.7.0 から)
+- [lib/kojiki_lm/config.ex](../src_min_elixir/lib/kojiki_lm/config.ex) を本実装。
+  - `model_repo: "Qwen/Qwen3-Coder-30B-A3B-Instruct"`
+  - `quantization: :int8` (`Axon.Quantization.quantize/2` で weight-only int8)
+  - `backend: EXLA.Backend`
 - `Bumblebee.load_model({:hf, "Qwen/Qwen3-Coder-30B-A3B-Instruct"})` の smoke test を 1 件
-- Windows ローカルでは load 不可。Linux + GPU (RunPod A5000) を想定
+- Windows ローカルでは load 不可。Linux + RunPod A6000 48GB pod を想定
 
-**確認ポイント** (順序を VRAM 制約に合わせて変更):
-1. Bumblebee の Qwen3 サポート (`@transformers_class_to_model` 確認)。Qwen3-Coder は
-   Qwen3 系として load 可、Qwen2/Qwen2.5 は非対応 (memory `project-elixir-pivot-viability` 参照)
-2. **Bumblebee + Nx + EXLA の int4 / GGUF サポート状況** — ここが Step 1 の最大の不確定要素。
-   - Q4_K_M 対応があれば → 80B 版を A6000 で本ベンチに使える
-   - 対応が無ければ → bf16 30B (~60 GB) を A100 80GB で動かすか、NIF 経由 llama.cpp に逃げる
-3. Qwen3-Coder-**30B**-A3B Q4 が A5000 24GB に乗るかの実測 (理論値 ~17 GB、KV cache + activation 込みで 22 GB 前後の想定)
-
-Step 1 が「機構動作確認」用の最小構成で着地できたら、Step 2-8 と並行で 80B 版の本ベンチ
-構成 (A6000 48GB / Q4) を別途準備する。
+**確認ポイント**:
+1. Bumblebee v0.7.0+ の Qwen3 サポートで Qwen3-Coder-30B-A3B が `Bumblebee.load_model/2` から読めること
+2. `Axon.Quantization.quantize/2` の weight-only int8 を 30B に適用して `Bumblebee.Text.generation/3` がエラーなく回ること
+3. **VRAM 実測** — 30B int8 + KV cache + activation で A6000 48GB に収まること (理論 ~30-35 GB、実測で確認)
+4. 1-prompt 推論レイテンシの実測 — Go 版 ($0.30/h A5000) との absolute throughput 比較
 
 ### Step 2 — L3 GenServer 本実装 (1-2d)
 
@@ -153,10 +161,12 @@ Step 1 が「機構動作確認」用の最小構成で着地できたら、Step
 ### Step 3 — L5 GenServer 本実装 (1d)
 
 - [lib/kojiki_lm/l5.ex](../src_min_elixir/lib/kojiki_lm/l5.ex) の `stub_evaluate` を差し替え:
-  - `Code.string_to_quoted/1` で構文検査
-  - `Code.eval_string/3` を `restricted` mode で実行 (sandbox)
-  - ExUnit テストハーネスから verdict 決定
+  - `Code.string_to_quoted/1` で構文検査 (verdict 計算の早期 path)
+  - `System.cmd("elixir", [path], timeout: 5_000)` で `.exs` をサブプロセス実行 (MultiPL-E `eval_elixir.py` と同形式)
+  - exit code 0 + stderr 中の `Assertion with == failed` / `SyntaxError` の有無で verdict (`:commit / :repair / :halt`) を決定
 - L5 を `YomotsuHirasaka` の evaluator PID として注入 → BEAM 境界 = Firewall 物理層
+- 注意: `Code.eval_string/3` を BEAM 内部で直接呼ぶと評価器側のプロセス heap に code が
+  ロードされて Firewall の主張が弱まる。**必ず別 OS プロセス (`System.cmd`) を経由**
 
 ### Step 5 — 型位置 bias (1-2d)
 
@@ -171,11 +181,13 @@ Step 1 が「機構動作確認」用の最小構成で着地できたら、Step
 - AST 変形による軽微な fix-up (例: 未使用 alias 削除)
 - Go 版 ([src_min_go/kojiki_lm/mechanical_repair.py](../src_min_go/kojiki_lm/mechanical_repair.py)) は `goimports` 1 種のみで surface area ゼロだった ([project-mechanical-repair-mbpp-go-zero](../C:/Users/mimat/.claude/projects/c--Users-mimat-Yamato-no-Mikoto/memory/project-mechanical-repair-mbpp-go-zero.md))。Elixir では複数経路で再評価する
 
-### Step 7 — MultiPL-E elixir runner (0.5d)
+### Step 7 — MultiPL-E elixir runner (0.5d、Step 3 と統合可能)
 
-- MultiPL-E の humaneval-elixir (161 問) / mbpp-elixir (397 問) を取り込み
-- `mix test` 互換のテストハーネスを書く (MultiPL-E は基本 `exec` ベース)
+- MultiPL-E の humaneval-elixir (161 問) / mbpp-elixir (397 問) dataset を `scripts/eval/generate_multipl_e.py` で取得
+- ランナーは `scripts/eval/go_eval.py` の Elixir 版 (`scripts/eval/elixir_eval.py`) を新規作成。MultiPL-E `eval_elixir.py` と同じく `subprocess.run(["elixir", file], timeout=5)` で .exs を実行、exit code ベースで判定
 - `scripts/runpod_bench.sh` を Elixir 用に拡張 (`DATASET=humaneval-elixir` / `mbpp-elixir`)
+- `scripts/eval/run_yamato_min_elixir.py` (Python runner) を新規作成、`run_yamato_min_go.py` を元に Elixir 用に移植
+- `scripts/eval/judge_win_condition_elixir.py` を `judge_win_condition_go.py` から移植
 
 ### Step 8 — 検証 + ablation (0.5d)
 
@@ -189,27 +201,39 @@ Step 1 が「機構動作確認」用の最小構成で着地できたら、Step
 
 ## 残る不確定要素
 
-- Qwen3-Coder-(Next/30B) の Elixir 生成品質 (Qwen2.5-Coder の Go 生成と比較してどうか) は未測定。Step 1 ベンチで verify するまで分からない
-- MultiPL-E elixir のテストハーネス互換性 (`mix test` ベースかカスタムか) は未確認
-- **Bumblebee の int4 / GGUF サポート状況** — 公式 doc では bf16/fp16 が主、Q4_K_M の対応状況は不明。サポートが無ければ:
-  - 30B Q4 案 → 動かない (Q4 ロードができない)
-  - 80B 案 → さらに動かない (bf16 で 160 GB)
-  - **逃げ道**: BEAM NIF 経由で llama.cpp を呼ぶ。プロセス境界の Firewall 主張は維持できるが、推論パスが Elixir 純血でなくなる
+- Qwen3-Coder-30B-A3B の Elixir 生成品質 (Qwen2.5-Coder の Go 生成と比較してどうか) は未測定。Step 1 ベンチで verify するまで分からない
 - A6000 48GB pod が RunPod で常時確保可能か (region/queue 依存)
+- 30B int8 が実測で本当に A6000 48GB に収まるか (理論 ~30-35 GB だが KV cache + activation のオーバーヘッド未測定)
+- `Axon.Quantization.quantize/2` が Qwen3 系の MoE 構造で正しく動くか (Bumblebee 0.7.0 の Qwen3 サポートは bf16 主体、quantize と組み合わせた前例なし)
 
-VRAM 要求自体は 2026-05-21 web 確認で確定済 (Q4 ~46-48 GB / Q8 ~85 GB / bf16 ~160 GB)。
+## 解消済の不確定要素 (2026-05-21 確認)
 
-## Win Condition (暫定)
+- ~~Bumblebee の int4 / GGUF サポート状況~~ → **未対応** ([Issue #249](https://github.com/elixir-nx/bumblebee/issues/249) / [#413](https://github.com/elixir-nx/bumblebee/issues/413) Open のまま、weight-only int8 のみ)。Q4 前提のロードマップは放棄、int8 ベースに切替
+- ~~MultiPL-E elixir のテストハーネス互換性~~ → **`elixir <file>` CLI で `.exs` を直接実行、5s timeout、exit code ベース**。`mix test` 不要、Go 版 `go_eval.py` 構造を直接転用可
 
-Go 版に倣い:
+## Win Condition (option A 版に再定義)
+
+本 pivot の主目的が **Firewall を BEAM プロセス境界で完成させる**ことなので、Win Condition も
+LM 性能ではなく Firewall の隔離特性を中心に置く:
+
+### 一次基準 (Firewall 検証 — 必達)
+
+1. **vanilla (no-kotodama) vs no-firewall の byte-identical 完全一致** (humaneval-elixir 161 問 × 3 seed)
+   - Firewall を入れても生成への観測可能な悪影響が無いこと
+   - Go 版で 374/374 達成済 ([sampling_path_issue.md](sampling_path_issue.md))、Elixir では BEAM 隔離により **より低コスト**で達成できるはず
+2. **`YomotsuHirasaka` の型契約テストが ExUnit で 100% 緑**
+   - `is_binary/1` guard で `Nx.Tensor` 等が構造的に reject されること
+   - evaluator が別 PID で動き、message passing 経由でしか verdict が流れないこと
+
+### 二次基準 (LM 性能 — 参考値)
 
 - humaneval-elixir 161 問 × 3 seed × 4 mode (baseline / no-kotodama / no-firewall / full)
-- **vanilla (no-kotodama) vs no-firewall の byte-identical 完全一致** = Firewall 隔離壁の実装層を BEAM が担っていることの証拠
-- pass@1 で baseline 比 **+5pp** (Go 版と同じ目標値、Elixir で達成できるかは Step 8 で確定)
+- pass@1 の **mode 間差** を観測。Go 版 mbpp-go で attribution 未解決だった「言霊 bias 単独寄与」の Elixir での挙動を確認 ([project-go-roadmap-state](../C:/Users/mimat/.claude/projects/c--Users-mimat-Yamato-no-Mikoto/memory/project-go-roadmap-state.md))
 
-**ただし**: 30B fallback で測った数字を「Win Condition 達成」と称しない。80B Next 版で
-本ベンチを取った数字でなければ、Go 版 ([roadmap_min_go.md](roadmap_min_go.md)) と直接比較
-できる結果にならない。30B での数字は **機構動作確認の傍証** として扱う ([feedback-ablate-before-celebrating](../C:/Users/mimat/.claude/projects/c--Users-mimat-Yamato-no-Mikoto/memory/feedback-ablate-before-celebrating.md))。
+**Go 版との pass@1 比較は行わない**:
+- LM が違う (Qwen2.5-Coder-7B vs Qwen3-Coder-30B-A3B)、量子化が違う (bf16 vs int8)、言語が違う (Go vs Elixir)、ハードが違う (A5000 vs A6000)
+- 同一条件で測れないものを比べても結論が出ない ([feedback-ablate-before-celebrating](../C:/Users/mimat/.claude/projects/c--Users-mimat-Yamato-no-Mikoto/memory/feedback-ablate-before-celebrating.md))
+- Elixir 版の Win Condition は **Elixir 内**で完結させる (Firewall 一次基準 + mode 間差の二次基準)
 
 ## 関連メモリ
 

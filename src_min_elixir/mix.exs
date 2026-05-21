@@ -26,9 +26,12 @@ defmodule KojikiLM.MixProject do
   defp deps do
     [
       # Step 1 (Bumblebee + Nx + EXLA) で有効化する。Step 4 + 骨格段階では未使用。
-      # {:bumblebee, "~> 0.6"},
+      # v0.7.0 (2026-05-16) で Qwen3 サポート追加 (PR #423)、Qwen3-Coder-30B-A3B 系を要求するため最低 0.7。
+      # int4/GGUF は未対応 (Issue #249 / #413 Open)、量子化は Axon.Quantization の weight-only int8 のみ。
+      # {:bumblebee, "~> 0.7"},
       # {:nx, "~> 0.9"},
-      # {:exla, "~> 0.9"}
+      # {:exla, "~> 0.9"},
+      # {:axon, "~> 0.7"}    # Axon.Quantization 用
     ]
   end
 end

@@ -10,14 +10,20 @@ yamatoLLM Elixir 版 — Firewall (黄泉比良坂) を **BEAM プロセス境�
 
 | Step | 内容 | 状態 |
 |---|---|---|
-| 1 | Mix project + Bumblebee + Qwen3-Coder-Next load | mix.exs の deps を comment-out で配置 |
+| 1 | Mix project + Bumblebee (~> 0.7) + Qwen3-Coder-30B-A3B-Instruct load (int8 量子化) | mix.exs の deps を comment-out で配置 |
 | 2 | `KojikiLM.L3` GenServer (generate + sampling) | stub のみ |
-| 3 | `KojikiLM.L5` GenServer (`Code.eval_string` + ExUnit) | stub のみ |
+| 3 | `KojikiLM.L5` GenServer (`System.cmd("elixir", [.exs])` で別プロセス実行) | stub のみ |
 | 4 | `KojikiLM.YomotsuHirasaka` (BEAM proc 境界の薄ラッパー) | **本実装** |
 | 5 | 型位置 bias (set-theoretic types からの抽出) | 未着手 |
 | 6 | 機械的 REPAIR (`Mix.format` + AST + "did you mean" parser) | 未着手 |
-| 7 | MultiPL-E elixir runner (humaneval/mbpp 共通) | 未着手 |
+| 7 | MultiPL-E elixir runner (`elixir <file>` CLI ベース、`mix test` 不要) | 未着手 |
 | 8 | 検証 + ablation (vanilla vs full の byte-identical) | 未着手 |
+
+**2026-05-21 確定方針** (詳細 [docs/roadmap_min_elixir.md](../docs/roadmap_min_elixir.md)):
+
+- **LM**: Qwen3-Coder-**30B**-A3B-Instruct (80B Next は Bumblebee の int4/GGUF 未対応のためコスト 6× で除外)
+- **量子化**: weight-only int8 (`Axon.Quantization`)
+- **GPU**: A6000 48GB ($0.49/h)
 
 ## 何を Step 4 で実証するか
 
@@ -53,7 +59,6 @@ mix format          # `.formatter.exs` に従う
 src_min_elixir/
 ├── mix.exs
 ├── .formatter.exs
-├── .gitignore
 ├── README.md
 ├── lib/
 │   └── kojiki_lm/
