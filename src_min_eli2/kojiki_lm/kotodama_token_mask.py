@@ -1,13 +1,16 @@
 """
-言霊トークン bias 配列 (Go 版) — symbol names → BPE first-token logit bias
+言霊トークン bias 配列 (言語非依存) — symbol names → BPE first-token logit bias
 
-Oracle daemon が返す types + vars (symbol 名のリスト) を、Qwen BPE のトークン ID
-集合に変換し、**logit に加算する bias 配列** を作る。
+Oracle (Go: daemon / Elixir: Python 内 hardcoded stdlib) が返す symbol 名リストを、
+Qwen BPE のトークン ID 集合に変換し、**logit に加算する bias 配列** を作る。
+
+クラス名は `SymbolBiasBuilder` (旧 `GoSymbolBiasBuilder` を 2026-05-21 rename、
+src_min_go では historical 名のまま、src_min_eli2 で言語非依存に統一)。
 
 TS 版 src_min/kojiki_lm/kotodama_token_mask.py との設計上の違い (致命的):
   - TS 版は bool マスクを作って logits を `masked_fill_(-inf)` していた
     → LM の正解 token を物理的に殺し、tsc strict pass rate を −24pp 悪化させた
-  - Go 版は **+k (デフォルト +2.0) の bias を加算** する、float tensor を作る
+  - 本実装は **+k (デフォルト +2.0) の bias を加算** する、float tensor を作る
     → LM の正解を残しつつ、許可された token に確率重み付けで誘導する
 
 Bias 配列は `[V]` (vocab_size 長の float32 tensor)。許可された token id の位置に +k、
@@ -35,11 +38,11 @@ class BiasConfig:
     が別 token になることが多いので True 推奨"""
 
 
-class GoSymbolBiasBuilder:
+class SymbolBiasBuilder:
     """allowed symbol 名 → logit bias 配列 [V]
 
     使い方:
-        builder = GoSymbolBiasBuilder(tokenizer, lm_vocab_size=152064)
+        builder = SymbolBiasBuilder(tokenizer, lm_vocab_size=152064)
         bias = builder.build_bias_for_symbols(
             types=("int", "string", "MyStruct"),
             vars_=("a", "b"),

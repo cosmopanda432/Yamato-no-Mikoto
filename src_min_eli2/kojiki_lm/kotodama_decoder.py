@@ -31,7 +31,7 @@ from transformers.generation.logits_process import (
 
 from .elixir_symbol_oracle import OracleClient, OracleResult
 from .kotodama_context import looks_like_type_position
-from .kotodama_token_mask import BiasConfig, GoSymbolBiasBuilder
+from .kotodama_token_mask import BiasConfig, SymbolBiasBuilder
 from .yomotsu_hirasaka import (
     L3ToL5Payload,
     L5ToL3Verdict,
@@ -117,7 +117,7 @@ class KotodamaDecoder:
     def __init__(
         self,
         oracle: OracleClient | None,
-        bias_builder: GoSymbolBiasBuilder,
+        bias_builder: SymbolBiasBuilder,
         firewall: YomotsuHirasaka,
         config: KotodamaConfig | None = None,
     ) -> None:

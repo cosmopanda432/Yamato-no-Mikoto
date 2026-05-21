@@ -1,130 +1,89 @@
 """
-言霊コンテキスト (Go 版) — Oracle 呼び出しの **事前 filter**
+言霊コンテキスト (Elixir target 版) — Oracle 呼び出しの **事前 filter**
 
-decode 中、毎 token oracle (Go daemon) を呼ぶと P95 50ms × 256 token = 12.8s/q
-の overhead になる。Python 側で安価な regex 事前 filter を入れ、「型 context の
-可能性が低い位置」を skip して oracle 呼び出し回数を減らす。
+src_min_go/kojiki_lm/kotodama_context.py の Go 用「型位置 hint」を Elixir 用に書き換えた。
+Elixir は静的型を持たないため「型位置」概念は無く、代わりに **シンボル位置** (Module の
+function 呼び出し位置、struct field 位置) を検出する ([[feedback-elixir-has-no-static-types]])。
 
 責務分担:
-  - Python (本ファイル):  text_buffer 末尾の安価な regex で「型位置候補」を pass
-  - Go daemon (oracle):    AST ベースの精密判定 (scope_kind を含む QueryResult)
+  - Python (本ファイル): text_buffer 末尾の安価な regex で「シンボル位置候補」を pass
+  - oracle (elixir_symbol_oracle): hardcoded stdlib lookup で実際の symbol 集合を返す
 
-最終判定は oracle daemon 側に委ねるため、本ファイルは **false positive 寄り**
-(過剰に oracle を呼ぶ) でよい。false negative (oracle を呼ばない判定ミス) が
-あると bias 加算の機会損失になるので、誤検知よりも見落としを避ける。
+False positive 寄りで OK (= oracle 側で最終判定して None なら bias 加算 skip)。
+False negative の方が痛い (bias 加算機会の見逃し)。
 
-TS 版 src_min/kojiki_lm/kotodama_context.py との違い:
-  - Go には `<>` ジェネリック構文がない → for/if 不等式 `i <` の偽陽性が
-    そもそも起きない。寛容な regex でよい
-  - Go には三項演算子がない → `): ` の偽陽性なし
-  - Go では戻り値型は `): ` の代わりに `) ` (型を伴う場合)、`) {` (戻り値型なし)
-    の二択。区別は AST が行う
+## Elixir で検出するシンボル位置
+
+| 位置 | 例 | 判定 |
+|---|---|---|
+| `Module.<cursor>` | `String.<cursor>` | True (Module function 呼び出し) |
+| `%Module{<cursor>:` | `%User{<cursor>` | True (struct field、将来対応) |
+| `Module.func(<cursor>` | 関数引数 | False (引数の型は動的、bias 対象なし) |
+| `def foo(<cursor>` | パラメータ位置 | False (動的) |
+| `case x do; <cursor>` | clause head | False (任意 atom) |
+
+注: `looks_like_type_position` という関数名は **Go 版からの継承で historical**。
+Elixir では「型」ではなく「シンボル」位置だが、kotodama_decoder.py が同 symbol を import
+しているため互換性のために名前を維持。
 """
 
 from __future__ import annotations
 
 import re
 
-# 「次トークンが Go の型または識別子」の典型パターン (text の末尾にマッチ)。
-# **過剰検出寄り**: oracle 側で AST 判定するため、Python 側は filter として
-# 「明らかに型位置でない場合は skip」だけが役割。
-# 重要: Qwen の BPE は token に前置空白を含む (例: `' result'` は 1 token)。
-# decode 中の text_buffer は `var result` のように **末尾空白なし** で 1 step
-# 止まる場合が typical。次の token (` []` や ` int`) が前置空白を含むため、
-# `var result ` のような空白で終わる中間状態は生まれない。
+# 「次トークンが Elixir のシンボル (Module function / struct field)」の典型パターン
+# (text の末尾にマッチ)。**過剰検出寄り**: oracle 側で最終判定するため、Python 側は
+# filter として「明らかにシンボル位置でない場合は skip」だけが役割。
 #
-# したがって filter pattern は `\s*$` (0 個以上) を使う。`\s+$` だと Qwen の
-# 生成パターンを取り逃して言霊が一度も発火しない (smoke で実証済み)。
-#
-# 設計の歴史 (2026-05-21 更新):
-# 初期実装は func_arg / func_return / var_decl / const_decl / type_alias を入れていた
-# が、mbpp-go ablation (2026-05-20) で「**func_arg / func_return 位置は LM が既に
-# top-1 で 0.9+ の確率で正解 token を選んでおり、+2.0 加算しても argmax は変わら
-# ない**」ことが判明。bias_step_count が 374 問中 365 問で発火していたが、bias
-# toggle で実際に出力が変わったのは 3 問 (0.8%) だけ。それも cosmetic な var_decl
-# のスタイル差で pass@1 / vet に効かなかった。
-#
-# 修正方針: 「LM が確信してる関数シグネチャ位置」を除外し、**LM が型の選択に迷う
-# 難所** に発火位置を絞る。具体的には:
-#   - chan の elem type: `chan ___`
-#   - map の key/val type: `map[___]V` / `map[K]___`
-#   - slice の elem type: `[]___`
-#   - interface method の return type: `interface { M() ___ }`
-#   - type assertion の型: `x.(___)`
-# これら複合型の elem 位置は LM の確信度が低く、bias で誘導できる余地がある。
-_TYPE_POSITION_HINTS: tuple[re.Pattern[str], ...] = (
-    # === 既存: 宣言位置 (var_decl は唯一 argmax を動かす実績あり) ===
-    # var 宣言の型位置: `var x` / `var x `
-    re.compile(r"\bvar\s+\w+\s*$"),
-    # const 宣言の型位置: `const x` / `const x `
-    re.compile(r"\bconst\s+\w+\s*$"),
-    # type alias の右辺: `type T` / `type T `
-    re.compile(r"\btype\s+\w+\s*$"),
+# Qwen の BPE 特性 (token に前置空白を含む) は Go 版と同じため、`\s*$` (0 個以上) を
+# 使う。
+_SYMBOL_POSITION_HINTS: tuple[re.Pattern[str], ...] = (
+    # Module.func 呼び出し位置: `Module.` (cursor 直後)
+    # 例: `String.`, `Enum.`, `Kernel.`, `MyModule.`
+    # Module は必ず大文字始まり (Elixir の `module()` 関数値などとは別)
+    re.compile(r"(?<![A-Za-z0-9_.])[A-Z][A-Za-z0-9_]*\.\s*$"),
 
-    # === 新規: 複合型の elem 位置 (難所、LM の確信度低め) ===
-    # チャネル elem 型: `chan` / `chan ` / `chan<- ` / `<-chan `
-    re.compile(r"\bchan\s*$"),
-    re.compile(r"<-chan\s*$"),
-    re.compile(r"\bchan<-\s*$"),
-    # マップ key 型: `map[` (cursor 直後)
-    re.compile(r"\bmap\[\s*$"),
-    # マップ value 型: `map[K]` (key 閉じ後)
-    re.compile(r"\bmap\[\w+\]\s*$"),
-    re.compile(r"\bmap\[\[\]\w+\]\s*$"),  # `map[[]K]` のように key が slice
-    # スライス elem 型: `[]` (前に整数リテラルや変数が無いことが必要、`a[i]` を弾く)
-    re.compile(r"(?:^|[^\w\)])\[\]\s*$"),
-    # 配列 elem 型: `[3]` のように数値長 (前に word/paren が無いことが必要)
-    # 修正 2026-05-21: 以前は `\b\[\d+\]\s*$` で arr[0] (添字アクセス) も match して
-    # 偽陽性が量産されていた。先頭または非 word/paren の後に限定する。
-    re.compile(r"(?:^|[^\w\)])\[\d+\]\s*$"),
-    # interface method の return: `interface { Method() ` (引数閉じ後で `{` 内)
-    re.compile(r"\binterface\s*\{[^}]*\)\s*$"),
-    # type assertion `.(`: `x.(`
-    re.compile(r"\)\s*\.\(\s*$"),
-    re.compile(r"\w\.\(\s*$"),
-    # struct field の型位置: `struct { ... \n  Name` のように **直前行が
-    # `<indent><identifier>` のみ** の状態 (= field 名完了、次が型位置)。
-    # 修正 2026-05-21: 以前の `\bstruct\s*\{[^}]*\b\w+\s*$` は struct 内の
-    # 任意 identifier 末尾で match していたため、field 名 typing 中・型 typing 中・
-    # 後続 field 名 typing 中の全てで発火する偽陽性が量産された
-    # (mbpp-go full × 29 問で 209 件、67%、argmax 変化 1.6%)。
-    # 改行 + indent + word のみを要求して「field 名完了直後」のみに限定する。
-    # 単一行 `struct { Name ` は match しないが、実コードではほぼ multi-line。
-    re.compile(r"struct\s*\{[^}]*\n[\t ]+\w+$"),
+    # struct field 位置: `%Module{` (cursor 直後、struct field 名が来る)
+    re.compile(r"%[A-Z][A-Za-z0-9_.]*\{\s*$"),
+
+    # `|>` パイプ後 (次のトークンは関数 or `Module.func` の可能性)
+    re.compile(r"\|>\s*$"),
 )
 
-# 偽陽性ガード。Go ではジェネリック `<` も三項 `:` もないので積極的なガードは
-# 不要だが、明らかに型位置でない末尾を弾く保険として。
-#
-# 重要: 全て **text の末尾 (cursor 直前)** を見る regex。MULTILINE で
-# prompt 中の任意行にマッチさせると、HumanEval-Go の docstring の `// ...` で
-# 常時 reject されて言霊が一度も発火しない不具合になる (smoke で確認)。
-_NON_TYPE_TAILS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"[a-zA-Z0-9_)\]]\s*[<>!=]=?\s*$"),    # 比較演算子
-    re.compile(r"[+\-*/%&|^]\s*$"),                     # 算術 / 論理 二項演算子
-    re.compile(r":=\s*$"),                              # short var decl
-    re.compile(r"=\s*$"),                               # 代入
-    # 末尾の行 (最後の改行以降) が `//` で始まるなら、現在のカーソルはコメント中
-    re.compile(r"(?:\A|\n)[^\n]*//[^\n]*$"),
+# 偽陽性ガード。明らかにシンボル位置でない末尾を弾く保険。
+_NON_SYMBOL_TAILS: tuple[re.Pattern[str], ...] = (
+    # 比較演算子の直後 (右辺は値、シンボル選択ではない)
+    re.compile(r"[a-zA-Z0-9_)\]\}]\s*(?:==|!=|<=|>=|<|>)\s*$"),
+    # 算術 / 論理 二項演算子の直後
+    re.compile(r"[+\-*/%]\s*$"),
+    # 単独 `=` (代入直後、値が来る)
+    re.compile(r"(?<![=!<>])=\s*$"),
+    # 末尾の行が `#` コメント中
+    re.compile(r"(?:\A|\n)[^\n]*#[^\n]*$"),
+    # `~` sigil 直後 (e.g., `~r/.../`, sigil 引数は型 atom ではない)
+    re.compile(r"~[a-zA-Z]\s*$"),
 )
 
 _CONTEXT_WINDOW = 200
 
 
 def looks_like_type_position(text: str) -> bool:
-    """text の末尾が **型 position の可能性ある形** か、安価な regex で判定する。
+    """text の末尾が **シンボル位置の可能性ある形** か、安価な regex で判定する。
 
-    True を返したら oracle daemon に scope_kind を問い合わせる価値があり、
+    関数名は Go 版からの継承 (historical)。Elixir では「型位置」ではなく
+    「シンボル位置 (Module.func / %Struct{)」を意味する。
+
+    True を返したら oracle に symbol 集合を問い合わせる価値があり、
     False ならスキップ (decode を vanilla で進める)。False positive 寄り。
     """
     if not text:
         return False
     tail = text[-_CONTEXT_WINDOW:]
 
-    # 偽陽性ガード: 明らかに型位置でない末尾なら早期 reject
-    for p in _NON_TYPE_TAILS:
+    # 偽陽性ガード: 明らかにシンボル位置でない末尾なら早期 reject
+    for p in _NON_SYMBOL_TAILS:
         if p.search(tail):
             return False
 
-    # type-position hint のどれかにヒット
-    return any(p.search(tail) for p in _TYPE_POSITION_HINTS)
+    # symbol-position hint のどれかにヒット
+    return any(p.search(tail) for p in _SYMBOL_POSITION_HINTS)
