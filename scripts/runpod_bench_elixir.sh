@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# ⛔ 【中止 2026-05-21】本スクリプトは src_min_elixir/ (BEAM 完結 Mix project) 用で、
+# その路線は中止 (docs/旧ドキュメント/roadmap_min_elixir.md 参照)。
+# 新計画 src_min_eli2 (Python + Qwen2.5-Coder + Elixir target) では
+# scripts/runpod_bench_eli2.sh を使うこと。本スクリプトは将来 Bumblebee が
+# Qwen3 MoE / Qwen2 をサポートした時に再利用可能なため保存。
+#
+# ↓ 旧コンテンツ (中止時点のスナップショット) ↓
+#
 # RunPod 上での Yamato Elixir 版ベンチ実行 runbook
 #
 # Go 版 (scripts/runpod_bench.sh) と同じ設計方針:
