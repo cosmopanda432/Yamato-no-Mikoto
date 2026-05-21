@@ -218,6 +218,61 @@ DATASET=mbpp-go bash scripts/runpod_bench.sh judge full 0
       過去の Win 主張を完全にクリアにしたい場合
 - [ ] verification 後、本ドキュメントの「シナリオ」項を実際の数字で更新
 
+## 2026-05-21 Verification 結果
+
+mbpp-go × seed 0 × A5000 bf16 で 3 mode を取得 (修正 A/B/C/D/G/H 全部入り):
+
+| Mode | bias | firewall | pass@1 | vet |
+|---|---|---|---|---|
+| baseline (`model.generate`, 5/20 保存値) | — | — | 46.26% (173) | 67.65% |
+| vanilla (`KotodamaDecoder`) | OFF | OFF | 50.00% (187) | 73.26% |
+| no-kotodama (`KotodamaDecoder`) | OFF | ON  | 49.73% (186) | 73.26% |
+| full (`KotodamaDecoder`) | ON  | ON  | 50.27% (188) | 73.26% |
+
+### Pass@1 観点 (= 型予測精度ゲーム軸): scenario A 確定
+
+vanilla vs full 差 = 1 問 (0.27pp) → 言霊機構 (bias+firewall) の pass@1 寄与は実質ゼロ。
+`docs/sampling_path_issue.md` の scenario A (修正前 +4.01pp の正体は sampler 差) 確定。
+
+過去の Win Condition 主張 (`4a5992b` の humaneval-go +7.14pp など) は**型予測精度軸の数字**
+で、機構由来とは言い切れない。判定 JSON も合わせて訂正する必要がある。
+
+### Firewall 隔離観点 (= 本プロジェクトの主目的軸): 悪影響なしを確認
+
+vanilla vs no-kotodama の byte-identical 検証 (= firewall toggle で出力が変わるか):
+
+| 検証軸 | 修正前 (旧 sampler) | 修正後 (修正 A+D) |
+|---|---|---|
+| 出力が変わる prompt 数 | 181/374 (48.4%) | **0/374 (0.0%)** |
+| completion byte-identical | — | **374/374 (100.0%)** |
+| raw_completion byte-identical | — | **374/374 (100.0%)** |
+
+pass@1 が 1 問差 (vanilla 187 / no-kotodama 186) になる理由:
+- `mbpp_130_max_occurrences` で **生成コードは完全同一** だが、Go の `map[int]int` iteration
+  順序が非決定的 (Go runtime が意図的にシャッフル) なため、同頻度タイ時の出力が `8` か `7`
+  でフラップする
+- Firewall とは無関係な Go test 実行の flakiness
+
+### "Firewall 完成" 主張の節制
+
+byte-identical 100% が証明したのは「firewall を入れても生成への観測可能な悪影響は無い」
+までで、絶対的な Firewall 完成ではない。
+
+- ✅ 観測レベルの物理サイドチャネル不在 (vanilla vs no-kotodama 100% byte-identical)
+- ✅ L3↔L5 の型契約 (frozen dataclass) 維持 (`test_firewall_go.py` 14/14 pass)
+- ❌ 修正 E (REPAIR retry loop) の隔離設計実装 — 未着手
+- ❓ タイミング/メモリ等の output に出ないサイドチャネル — 未測定
+
+正確な主張: **「Firewall が生成に悪影響を与えていないことを 374 問規模で確認。型契約は
+両方向で維持。残る作業は修正 E の隔離設計実装」**。
+
+### 訂正すべきもの
+
+- [ ] `baselines/yamato_min_go.full.seed0_1_2.judge.json` の Win Condition ACHIEVED 主張
+  → 型予測精度軸の数字で本プロジェクト評価軸ではない旨を明示。または撤回。
+- [ ] `4a5992b` コミットの主張も同様 (humaneval-go の Win も sampler 差由来の可能性大)
+- [x] `memory/project-firewall-purpose.md` → "byte-identical = 悪影響不在" の限定を追記済 (2026-05-21)
+
 ## 過去のコミット履歴との関係
 
 - `4a5992b` (M6 Win Condition ACHIEVED): pass@1 +7.14pp / vet +15.37pp の Win 主張。
