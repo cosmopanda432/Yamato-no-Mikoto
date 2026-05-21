@@ -22,12 +22,16 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT / "src_min_go"))
+
+from kojiki_lm.mechanical_repair import goimports_repair  # noqa: E402
 
 # undefined symbol を表す Go コンパイラエラー (PRIMARY = 型ハルシ判定の核)
 RE_UNDEFINED = re.compile(
@@ -53,6 +57,12 @@ def parse_args():
                     help="go コマンドへのパス (PATH に通っていなくても動くように)")
     ap.add_argument("--no-test", action="store_true",
                     help="go test を skip (go build + vet のみ、デバッグ用)")
+    ap.add_argument("--mechanical-repair", action="store_true",
+                    help="L5 内で `goimports` による機械的修復を prompt+completion に "
+                         "適用してから build/vet/test する (LLM は呼ばない)。"
+                         "Firewall 隔離契約は維持: text→text の決定論的変換のみ")
+    ap.add_argument("--goimports-bin", default=None,
+                    help="goimports バイナリパス (デフォルト: PATH から検索)")
     return ap.parse_args()
 
 
@@ -67,14 +77,20 @@ def run_one(
     go_bin: str,
     timeout: float,
     skip_test: bool,
+    mechanical_repair: bool = False,
+    goimports_bin: str | None = None,
 ) -> dict:
-    """1 サンプル評価。go build → go vet → go test の順で run、各成否を records"""
+    """1 サンプル評価。go build → go vet → go test の順で run、各成否を records
+
+    mechanical_repair=True なら build 前に `goimports` を **prompt+completion** に適用
+    する。`tests` は repair の context に含めない (Goodhart 回避: テストの期待値が
+    L3 等価情報として漏れることを構造的に防ぐ)。Firewall 隔離契約 (L3↔L5 text-only)
+    は維持される。
+    """
     prompt = sample["prompt"]
     completion = sample["completion"]
     tests = sample["tests"]
     pkg_name = derive_package_name(prompt)
-
-    source = prompt + completion + "\n\n" + tests + "\n"
 
     result = {
         "name": sample["name"],
@@ -88,7 +104,19 @@ def run_one(
         "test_stderr": "",
         "has_undefined": False,
         "elapsed_sec": 0.0,
+        "repair_applied": False,
+        "repair_tool": "",
     }
+
+    # 機械的修復 (L5 内部、L3 非関与)。tests を含めずに source body のみ走らせる。
+    body = prompt + completion
+    if mechanical_repair:
+        repair = goimports_repair(body, goimports_bin=goimports_bin)
+        body = repair.text
+        result["repair_applied"] = repair.applied
+        result["repair_tool"] = repair.tool
+
+    source = body + "\n\n" + tests + "\n"
 
     t0 = time.time()
     try:
@@ -175,7 +203,11 @@ def main():
 
     for i, sf in enumerate(sample_files):
         sample = json.loads(sf.read_text())
-        r = run_one(sample, args.go_bin, args.timeout, args.no_test)
+        r = run_one(
+            sample, args.go_bin, args.timeout, args.no_test,
+            mechanical_repair=args.mechanical_repair,
+            goimports_bin=args.goimports_bin,
+        )
         per_sample.append(r)
 
         # 集計
@@ -188,6 +220,8 @@ def main():
             counts["test_ok"] += 1
         if r["has_undefined"]:
             counts["has_undefined"] += 1
+        if r.get("repair_applied"):
+            counts["repair_applied"] += 1
 
         status = "BUILD ✓" if r["build_ok"] else "BUILD ✗"
         if not args.no_test:
@@ -209,6 +243,8 @@ def main():
         "undefined_rate": counts["has_undefined"] / max(n, 1),
         "elapsed_total_sec": elapsed,
         "generated_dir": str(gen_dir),
+        "mechanical_repair_enabled": args.mechanical_repair,
+        "repair_applied_count": counts["repair_applied"],
     }
     (out_dir / "_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
 
@@ -219,6 +255,8 @@ def main():
     print(f"  TERTIARY  go vet  clean rate : {summary['vet_pass_rate']*100:6.2f}% ({counts['vet_ok']}/{n})")
     if not args.no_test:
         print(f"  TERTIARY  go test pass rate  : {summary['test_pass_rate']*100:6.2f}% ({counts['test_ok']}/{n})")
+    if args.mechanical_repair:
+        print(f"  REPAIR    goimports applied  : {counts['repair_applied']}/{n}")
     print(f"\nwrote -> {out_dir/'_summary.json'}")
 
 

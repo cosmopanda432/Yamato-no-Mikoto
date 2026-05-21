@@ -76,6 +76,17 @@ resolve_go_bin() {
     exit 1
 }
 
+# GOPATH/bin (goimports 等が install される場所) を PATH に追加。
+# go_eval.py の `--mechanical-repair` が goimports を shutil.which で見つけられる
+# ようにするため、setup 後の `run`/`pilot` 等でも有効にする。
+if command -v go >/dev/null 2>&1 || [[ -x /usr/local/go/bin/go ]]; then
+    _GO_BIN_FOR_PATH="$(resolve_go_bin 2>/dev/null || echo)"
+    if [[ -n "$_GO_BIN_FOR_PATH" ]]; then
+        _GOPATH_BIN="$($_GO_BIN_FOR_PATH env GOPATH 2>/dev/null)/bin"
+        [[ -d "$_GOPATH_BIN" ]] && export PATH="$_GOPATH_BIN:$PATH"
+    fi
+fi
+
 # Go ツールチェーンを /usr/local に展開 (既にあれば no-op)
 install_go_if_missing() {
     if [[ -x /usr/local/go/bin/go ]] || command -v go >/dev/null 2>&1; then
@@ -236,7 +247,7 @@ PY
         log "parquet already present, skip"
     fi
 
-    log "[4/4] symbol_oracle daemon (go build)"
+    log "[4/5] symbol_oracle daemon (go build)"
     if [[ ! -x "$ORACLE_BIN" ]]; then
         mkdir -p "$(dirname "$ORACLE_BIN")"
         local go_bin; go_bin="$(resolve_go_bin)"
@@ -245,6 +256,19 @@ PY
     else
         log "oracle daemon already built, skip"
     fi
+
+    log "[5/5] goimports (機械的 REPAIR 用、L5 の post-process)"
+    local go_bin; go_bin="$(resolve_go_bin)"
+    local gopath; gopath="$($go_bin env GOPATH)"
+    local goimports_bin="$gopath/bin/goimports"
+    if [[ ! -x "$goimports_bin" ]]; then
+        log "installing goimports → $goimports_bin"
+        "$go_bin" install golang.org/x/tools/cmd/goimports@latest
+    else
+        log "goimports already installed at $goimports_bin, skip"
+    fi
+    # PATH に $gopath/bin を追加 (go_eval.py が shutil.which で見つけられるように)
+    export PATH="$gopath/bin:$PATH"
 
     log "setup done."
 }
