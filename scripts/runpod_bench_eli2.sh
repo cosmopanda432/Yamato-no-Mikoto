@@ -11,7 +11,7 @@
 #
 # 想定フロー (RunPod A5000 24GB pod に SSH 接続後):
 #   bash scripts/runpod_bench_eli2.sh setup            # 約 10-15 分 (model DL 14GB が支配的)
-#   bash scripts/runpod_bench_eli2.sh smoke            # 約 2 分    (vanilla × 5 問)
+#   bash scripts/runpod_bench_eli2.sh smoke            # 約 2 分    (firewall-off × 5 問)
 #   bash scripts/runpod_bench_eli2.sh baseline 0       # 約 15-25 分 (1 seed × 161 問)
 #   bash scripts/runpod_bench_eli2.sh pilot 0          # 約 1.5-2h   (4 mode × seed 0 + judge)
 #   bash scripts/runpod_bench_eli2.sh ci               # 約 3-4h     (4 mode × seed 1+2 を追加)
@@ -22,7 +22,7 @@
 #   QUANTIZE           "4bit" | "8bit" | "none" (default: 4bit)
 #   MAX_NEW_TOKENS     (default: 256)
 #   TEMPERATURE        (default: 0.2)
-#   BIAS_VALUE         言霊 v2 のソフトバイアス加算量 (default: 2.0)
+#   (BIAS_VALUE は src_min_eli2 では未使用、bias 機構を撤去したため)
 #   DATASET            MultiPL-E subset (default: humaneval-elixir)。mbpp-elixir (397 問) も可
 #   SKIP_EXISTING      "1" で既出力を skip (default: 1)
 #   LIMIT              生成上限 (smoke 以外では未設定 = 全問)
@@ -46,12 +46,11 @@ MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/models/Qwen2.5-Coder-7B-Instruct}"
 QUANTIZE="${QUANTIZE:-4bit}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-256}"
 TEMPERATURE="${TEMPERATURE:-0.2}"
-BIAS_VALUE="${BIAS_VALUE:-2.0}"
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
 DATASET="${DATASET:-humaneval-elixir}"
 
 PARQUET="$REPO_ROOT/data/raw/multipl_e/${DATASET}/test-00000-of-00001.parquet"
-MODES=("full" "no-kotodama" "no-firewall" "vanilla")
+MODES=("firewall-on" "firewall-off")
 
 # --- helpers ----------------------------------------------------------------
 
@@ -136,7 +135,6 @@ run_yamato_mode_seed() {
         --quantize "$QUANTIZE" \
         --max-new-tokens "$MAX_NEW_TOKENS" \
         --temperature "$TEMPERATURE" \
-        --bias-value "$BIAS_VALUE" \
         --seed "$seed" \
         "${limit_flag[@]}" \
         $( [[ "$SKIP_EXISTING" == "1" ]] && echo --skip-existing )
@@ -224,28 +222,29 @@ PY
 }
 
 cmd_smoke() {
-    log "=== smoke: vanilla mode × seed 0 × N=5 (env / pipeline 動作確認) ==="
-    LIMIT=5 SKIP_EXISTING=0 run_yamato_mode_seed vanilla 0
-    log "smoke complete. inspect data/eval/results/${DATASET}.yamato_min_elixir.vanilla.seed0/_summary.json"
+    log "=== smoke: firewall-off mode × seed 0 × N=5 (env / pipeline 動作確認) ==="
+    LIMIT=5 SKIP_EXISTING=0 run_yamato_mode_seed firewall-off 0
+    log "smoke complete. inspect data/eval/results/${DATASET}.yamato_min_elixir.firewall-off.seed0/_summary.json"
 }
 
-# Firewall byte-identical 検証 (Go 版 cmd_smoke_fix_d 相当)
-# vanilla / no-kotodama × seed 0 × N=10 を回し、byte-identical 率を見る。
-# 期待: vanilla ↔ no-kotodama : 10/10 完全一致 (Firewall pathway が生成に副作用なし)
+# Firewall byte-identical 検証
+# firewall-off / firewall-on × seed 0 × N=10 を回し、byte-identical 率を見る。
+# 期待: firewall-off ↔ firewall-on : 10/10 完全一致 (Firewall pathway が生成に副作用なし)
+# diff_smoke_outputs.py の引数は historical 名のため `--vanilla` / `--no-kotodama` を継続使用。
 cmd_smoke_fix_d() {
     local seed="${1:-0}"
-    log "=== smoke-fix-d: vanilla + no-kotodama × seed $seed × N=10 (Firewall byte-identical 検証) ==="
-    LIMIT=10 SKIP_EXISTING=0 run_yamato_mode_seed vanilla "$seed"
-    LIMIT=10 SKIP_EXISTING=0 run_yamato_mode_seed no-kotodama "$seed"
+    log "=== smoke-fix-d: firewall-off + firewall-on × seed $seed × N=10 (Firewall byte-identical 検証) ==="
+    LIMIT=10 SKIP_EXISTING=0 run_yamato_mode_seed firewall-off "$seed"
+    LIMIT=10 SKIP_EXISTING=0 run_yamato_mode_seed firewall-on "$seed"
 
     if [[ ! -f scripts/eval/diff_smoke_outputs.py ]]; then
         err "scripts/eval/diff_smoke_outputs.py 不在"
         return 1
     fi
-    log "comparing outputs (vanilla vs no-kotodama)..."
+    log "comparing outputs (firewall-off vs firewall-on)..."
     python3 scripts/eval/diff_smoke_outputs.py \
-        --vanilla     "data/eval/generated/${DATASET}.yamato_min_elixir.vanilla.seed${seed}" \
-        --no-kotodama "data/eval/generated/${DATASET}.yamato_min_elixir.no-kotodama.seed${seed}"
+        --vanilla     "data/eval/generated/${DATASET}.yamato_min_elixir.firewall-off.seed${seed}" \
+        --no-kotodama "data/eval/generated/${DATASET}.yamato_min_elixir.firewall-on.seed${seed}"
 }
 
 cmd_baseline() {
@@ -284,7 +283,7 @@ cmd_run() {
     local seed="${2:?seed required}"
     case "$mode" in
         baseline) run_baseline_seed "$seed" ;;
-        full|no-kotodama|no-firewall|vanilla) run_yamato_mode_seed "$mode" "$seed" ;;
+        firewall-on|firewall-off) run_yamato_mode_seed "$mode" "$seed" ;;
         *) err "unknown mode: $mode"; exit 1 ;;
     esac
 }

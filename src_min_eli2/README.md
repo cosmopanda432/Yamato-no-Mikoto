@@ -38,16 +38,37 @@
 | Symbol oracle | `go/types` daemon | `elixir -e "Module.__info__/1"` 経由 |
 | Mechanical REPAIR | `goimports` | `mix format` + `Code.string_to_quoted/1` hint |
 
-## 予定する構成 (TBD)
+## 実装ファイル (2026-05-21、kotodama 撤去後の最小構成)
 
-| ファイル | 内容 | 状態 |
-|---|---|---|
-| `elixir_evaluator.py` | yomi_evaluator.py の Elixir 版 (keyword 辞書 + scripts/eval/elixir_eval.py 経路呼び出し) | ⬜ |
-| `elixir_symbol_oracle.py` | `subprocess.run(["elixir", "-e", ...])` で symbol 列挙 | ⬜ |
-| `elixir_mechanical_repair.py` | `subprocess.run(["mix", "format", "--stdin"])` で整形 | ⬜ |
-| `kotodama_context_elixir.py` | text position 判定の Elixir 用 re-tune | ⬜ |
-| (scripts 側) `scripts/eval/run_baseline_elixir.py` | Go 版 baseline runner の Elixir target 版 | ⬜ |
-| (scripts 側) `scripts/eval/run_yamato_min_elixir.py` | Go 版 yamato runner の Elixir target 版 | ⬜ |
+| ファイル | 内容 |
+|---|---|
+| `yomotsu_hirasaka.py` | Firewall (黄泉比良坂) 本体、src_min_go から 100% identical |
+| `firewall_decoder.py` | token-by-token decode loop + Firewall 統合 (`FirewallDecoder`)。 旧 `KotodamaDecoder` から bias 機構を撤去したもの |
+| `elixir_evaluator.py` | L5 ヒューリスティック評価器、Elixir keyword 辞書 |
+| `elixir_mechanical_repair.py` | `Code.format_string!` を subprocess で適用 |
+| `qwen_adapter.py` + `yamato_qwen.py` + `yamato_model.py` + `yamato_config.py` | Qwen2.5-Coder backbone wrap (src_min_go から copy) |
+| `data.py` | parquet I/O |
+| `kenpou/bonpu_confidence.py` + `yomi/tsukuyomi_type_head.py` | 言語非依存の head architecture (現状 inference path では未使用、訓練用に保存) |
+
+| Runner script (scripts/eval/) | 内容 |
+|---|---|
+| `run_baseline_elixir.py` | bare `model.generate()` (kojiki_lm 依存なし) |
+| `run_yamato_min_elixir.py` | FirewallDecoder 経由、`firewall-on` / `firewall-off` 2 mode |
+| `elixir_eval.py` | `elixir <file>` subprocess で評価 (生成完了後の採点) |
+| `judge_win_condition_elixir.py` | 95% CI で Win Condition 判定 |
+
+## 削除されたファイル (2026-05-21、kotodama 撤去で死コード化)
+
+| 旧ファイル | 撤去理由 |
+|---|---|
+| ~~`kotodama_decoder.py`~~ | `firewall_decoder.py` に置換 |
+| ~~`kotodama_context.py`~~ | bias 用 position 判定、bias なしで不要 |
+| ~~`kotodama_token_mask.py`~~ | bias 配列構築、不要 |
+| ~~`elixir_symbol_oracle.py`~~ | bias 用 symbol lookup、不要 |
+
+理由: Go 版 mbpp-go ablation で「言霊 bias 単独寄与が不可視」、Elixir では surface area
+さらに狭い ([[feedback-elixir-has-no-static-types]])。本プロジェクト主目的は Firewall
+([[project-firewall-purpose]]) のため、bias を撤去して decode+Firewall の最小核に絞る。
 
 ## 再利用しない (src_min_elixir 由来) もの
 

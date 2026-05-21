@@ -223,8 +223,8 @@ def parse_args():
                     help="baseline 側の per-seed _summary.json (1 個以上)")
     ap.add_argument("--yamato", nargs="+", required=True,
                     help="yamato 側の per-seed _summary.json (1 個以上)")
-    ap.add_argument("--mode", default="full",
-                    choices=["full", "no-kotodama", "no-firewall", "vanilla"],
+    ap.add_argument("--mode", default="firewall-on",
+                    choices=["firewall-on", "firewall-off"],
                     help="表示用 (yamato 側がどの ablation mode で生成されたか)")
     ap.add_argument("--out", required=True)
     return ap.parse_args()

@@ -22,8 +22,8 @@ src_min_elixir/ の Mix project 路線で発覚した: **Elixir LM エコシス�
 │                                                                │
 │  L3 (生成ランタイム)                                            │
 │   ├─ Qwen2.5-Coder-7B (transformers, bnb 4bit/8bit)            │
-│   ├─ KotodamaDecoder (src_min_go から、bias 対象 token のみ拡張) │
-│   └─ token-by-token decode loop                                 │
+│   ├─ FirewallDecoder (src_min_go から bias 撤去版)               │
+│   └─ token-by-token decode loop + Firewall 統合                 │
 │         │                                                       │
 │         ▼ %L3ToL5Payload{text, step_idx, prompt_id}             │
 │  YomotsuHirasaka (src_min_go から **100% 再利用**、言語非依存)  │
@@ -41,34 +41,46 @@ src_min_elixir/ の Mix project 路線で発覚した: **Elixir LM エコシス�
 
 ## src_min_go との関係 (再利用マップ)
 
+2026-05-21 update: src_min_eli2 から bias 機構 (Kotodama 関連) を撤去。
+Go 版 mbpp-go ablation で bias 単独寄与が不可視、Elixir では surface area さらに狭い
+([[feedback-elixir-has-no-static-types]]) ため。Decode loop + Firewall の最小核に絞る。
+
 | 観点 | src_min_go | src_min_eli2 |
 |---|---|---|
 | LM | Qwen2.5-Coder-7B | **同じ** |
 | Firewall (YomotsuHirasaka) | [yomotsu_hirasaka.py](../src_min_go/kojiki_lm/yomotsu_hirasaka.py) | **100% 再利用** (言語非依存 contract) |
-| KotodamaDecoder | [kotodama_decoder.py](../src_min_go/kojiki_lm/kotodama_decoder.py) | **再利用、bias 対象 oracle のみ差し替え** |
+| Decoder | `KotodamaDecoder` (decode + bias + Firewall) | **`FirewallDecoder`** (decode + Firewall、bias 撤去) |
 | L5 評価器 | [yomi_evaluator.py](../src_min_go/kojiki_lm/yomi_evaluator.py) (Go 用語彙) | `src_min_eli2/elixir_evaluator.py` 新規 |
-| Symbol oracle | `go/types` daemon (Go 専用) | `subprocess.run(["elixir", "-e", "Module.__info__/1"])` 新規 |
-| Mechanical REPAIR | `goimports` | `mix format` + AST 変形 (新規) |
+| ~~Symbol oracle~~ | `go/types` daemon | **撤去** (bias 機構と一緒に) |
+| Mechanical REPAIR | `goimports` | `elixir_mechanical_repair.py` (`Code.format_string!` subprocess) |
 | Dataset | humaneval-go (154) / mbpp-go (374) | humaneval-elixir (161) / mbpp-elixir (397) |
+| Ablation mode | 4 (full / no-kotodama / no-firewall / vanilla) | **2** (firewall-on / firewall-off) |
 
-## Step 計画
+## Step 計画 (2026-05-21 更新、kotodama 撤去後)
 
-| Step | 内容 | 工数 | 状態 |
-|---|---|---|---|
-| 1 | `src_min_eli2/elixir_evaluator.py` 最小版 (subprocess `elixir <file>` を呼ぶだけ、既存 `scripts/eval/elixir_eval.py` 構造を流用) | 0.5d | ⬜ |
-| 2 | `scripts/eval/run_baseline_elixir.py` (Go 版 baseline runner を Elixir target 用に移植) | 0.5d | ⬜ |
-| 3 | smoke 1 問動作確認 (Qwen2.5-Coder-7B + humaneval-elixir 1 問で end-to-end) | 0.5d | ⬜ |
-| 4 | `scripts/eval/run_yamato_min_elixir.py` (yamato pipeline、KotodamaDecoder 経由) | 0.5d | ⬜ |
-| 5 | `src_min_eli2/kotodama_context_elixir.py` (text position 判定の Elixir 用 re-tune) | 0.5d | ⬜ |
-| 6 | `src_min_eli2/elixir_symbol_oracle.py` (`Module.__info__/1` 経由の symbol 列挙) | 1d | ⬜ |
-| 7 | `src_min_eli2/elixir_mechanical_repair.py` (`mix format` + Code.string_to_quoted hint) | 0.5d | ⬜ |
-| 8 | `scripts/runpod_bench.sh` の DATASET=humaneval-elixir / mbpp-elixir 対応 (eval routing) | 0.5d | ⬜ |
-| 9 | humaneval-elixir 161 問 baseline + yamato 4 mode × 3 seed | A5000 6h | ⬜ |
-| 10 | mbpp-elixir 397 問 同様 | A5000 12h | ⬜ |
-| **合計** | | **約 4-5 day + 18h compute** | |
+| Step | 内容 | 状態 |
+|---|---|---|
+| 1 | src_min_go から Python core を copy (Firewall / Qwen adapter / data 等) | ✅ |
+| 2 | `elixir_evaluator.py` (L5 ヒューリスティック評価器) | ✅ |
+| 3 | `elixir_mechanical_repair.py` (`Code.format_string!` subprocess) | ✅ |
+| 4 | `firewall_decoder.py` (旧 KotodamaDecoder から bias 撤去) | ✅ |
+| 5 | `run_baseline_elixir.py` / `run_yamato_min_elixir.py` (2 mode: firewall-on / firewall-off) | ✅ |
+| 6 | `elixir_eval.py` (`elixir <file>` subprocess 評価) | ✅ |
+| 7 | `judge_win_condition_elixir.py` (95% CI 判定) | ✅ |
+| 8 | `runpod_bench_eli2.sh` (RunPod setup + bench runbook) | ✅ |
+| 9 | smoke 5 問 (pipeline 動作確認) | ✅ pass@1 40% (2/5) |
+| 10 | smoke-fix-d 10 問 (Firewall byte-identical) | ✅ **10/10 完全一致** |
+| 11 | baseline 161 問 × seed 0 | ✅ pass@1 26.71% (43/161)、compile 68.32%、undef 5.59% |
+| 12 | firewall-on 161 問 × seed 0 | ⬜ 次の一手 |
+| 13 | baseline vs firewall-on byte-identical 検証 (161/161 期待) | ⬜ 12 の直後 |
+| 14 | judge (1 seed smoke) | ⬜ |
+| 15 | 3 seed × 2 mode (full ci) | ⬜ A5000 ~30 分 |
 
-src_min_elixir/ の Step 3/4/6/7 は **使わない** (本路線では Python 側が肩代わり、ただし設計
-インスピレーションとしては有効)。
+撤去された旧 Step (kotodama 機構と一緒に):
+- ~~symbol oracle / kotodama context / token mask~~ (bias 単独寄与不可視のため除去)
+- ~~4 mode ablation (full / no-kotodama / no-firewall / vanilla)~~ → 2 mode に簡素化
+
+src_min_elixir/ の Mix project 実装は **使わない** (本路線では Python 側が肩代わり)。
 
 ## GPU/インフラ要件
 
@@ -91,15 +103,18 @@ src_min_elixir/ の旧 Win Condition (Firewall byte-identical + LM pass@1) は�
 ### 一次基準 (必達)
 
 1. **Go 版で達成済の Firewall byte-identical 性質が Elixir target でも保たれる**
-   - vanilla (firewall OFF) vs no-kotodama (firewall ON、bias OFF) で humaneval-elixir 161 問 × 3 seed が完全一致
+   - `firewall-off` (FirewallDecoder + firewall=OFF) vs `firewall-on` (firewall=ON) で humaneval-elixir 161 問 × 3 seed が完全一致
    - = Firewall 物理層が target 言語に依存しないことの証拠
-2. **`YomotsuHirasaka` 型契約の Python 単体テストが既存通り緑** (= [test_firewall_go.py](../tests_go/test_firewall_go.py) を `target=elixir` 構成でも回す)
+   - 進捗: smoke-fix-d (10 問) で **10/10 達成** (2026-05-21)、161 問本ベンチへ
+2. **`YomotsuHirasaka` 型契約の Python 単体テストが既存通り緑** ([test_firewall_go.py](../tests_go/test_firewall_go.py) を流用)
 
 ### 二次基準 (Elixir 生成品質)
 
-- humaneval-elixir 161 問 × 3 seed × 4 mode (baseline / no-kotodama / no-firewall / full)
-- **pass@1** で baseline 比 +5pp (Go 版と同じ目標値、Qwen2.5-Coder-7B での達成可能性は未測定)
-- **undef-symbol rate / `mix compile` 成功率** で同様に改善 (型予測 = hallucination 検出の本来効果指標)
+- humaneval-elixir 161 問 × 3 seed × **2 mode** (firewall-off / firewall-on)
+- ablation で見るのは「Firewall ON/OFF で pass@1 / compile_pass_rate / undef_rate が変化するか」
+- 期待: Firewall ON は OFF と byte-identical (一次基準) のため LM 性能は同じ。Firewall の目的は L5 verdict signal の取得であって LM 性能向上ではない
+- baseline (bare `model.generate`) との比較は code path 差を含む参考値
+- 結論的に: Firewall の Win Condition は「LM 性能を変えないこと」であり「+5pp」ではない
 
 ### 三次基準 (3 言語の通底)
 
