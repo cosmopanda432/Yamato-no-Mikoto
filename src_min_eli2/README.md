@@ -45,7 +45,6 @@
 | `yomotsu_hirasaka.py` | Firewall (黄泉比良坂) 本体、src_min_go から 100% identical |
 | `firewall_decoder.py` | token-by-token decode loop + Firewall 統合 (`FirewallDecoder`)。 旧 `KotodamaDecoder` から bias 機構を撤去したもの |
 | `elixir_evaluator.py` | L5 ヒューリスティック評価器、Elixir keyword 辞書 |
-| `elixir_mechanical_repair.py` | `Code.format_string!` を subprocess で適用 |
 | `qwen_adapter.py` + `yamato_qwen.py` + `yamato_model.py` + `yamato_config.py` | Qwen2.5-Coder backbone wrap (src_min_go から copy) |
 | `data.py` | parquet I/O |
 | `kenpou/bonpu_confidence.py` + `yomi/tsukuyomi_type_head.py` | 言語非依存の head architecture (現状 inference path では未使用、訓練用に保存) |

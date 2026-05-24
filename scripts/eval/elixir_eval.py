@@ -19,10 +19,6 @@ Go 版との違い:
     python3 scripts/eval/elixir_eval.py \\
         --generated-dir data/eval/generated/humaneval-elixir.baseline.seed0 \\
         --out-dir data/eval/results/humaneval-elixir.baseline.seed0
-
-mechanical_repair オプションは `elixir -e "Code.format_string!"` をサブプロセス起動して
-適用する。L3 を呼び戻さない決定論的 text → text 変換 (Goodhart 回避: tests は repair の
-context に含めない)。
 """
 
 from __future__ import annotations
@@ -36,7 +32,6 @@ import sys
 import tempfile
 import time
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -60,14 +55,6 @@ RE_FUNCTION_CLAUSE = re.compile(r"\bFunctionClauseError\b|\bno function clause m
 RE_MODULE_DEFN = re.compile(r"^\s*defmodule\s+([A-Z][\w\.]*)\s+do", re.MULTILINE)
 
 
-@dataclass
-class RepairResult:
-    text: str
-    applied: bool
-    tool: str
-    stderr: str = ""
-
-
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -88,15 +75,6 @@ def parse_args():
         default=None,
         help="elixir CLI へのパス。デフォルト: PATH から検索",
     )
-    ap.add_argument(
-        "--mechanical-repair",
-        action="store_true",
-        help=(
-            "elixir -e `Code.format_string!` で prompt+completion を整形してから評価。"
-            "tests は repair の context に含めない (Goodhart 回避)。"
-            "Firewall 隔離契約は維持: text→text の決定論的変換のみ"
-        ),
-    )
     return ap.parse_args()
 
 
@@ -106,59 +84,12 @@ def derive_module_name(prompt: str) -> str:
     return m.group(1) if m else "Sample"
 
 
-def format_repair(text: str, elixir_bin: str, timeout_sec: float = 5.0) -> RepairResult:
-    """`Code.format_string!` を Elixir サブプロセスで適用する text → text 変換。
-
-    L5 内部の決定論的 REPAIR。LLM は呼ばない。
-    """
-    # 注: `:all` を使うのは Elixir 1.12 互換のため (1.13+ では `:eof` が標準だが、
-    # Ubuntu 22.04 apt bundled は Elixir 1.12.2 で `:eof` 未対応)。
-    one_liner = (
-        "IO.read(:stdio, :all) "
-        "|> Code.format_string!() "
-        "|> IO.iodata_to_binary() "
-        "|> IO.write()"
-    )
-    try:
-        proc = subprocess.run(
-            [elixir_bin, "-e", one_liner],
-            input=text,
-            capture_output=True,
-            text=True,
-            timeout=timeout_sec,
-        )
-    except subprocess.TimeoutExpired:
-        return RepairResult(text=text, applied=False, tool="format", stderr="timeout")
-    except OSError as e:
-        return RepairResult(text=text, applied=False, tool="format", stderr=f"OSError: {e}")
-
-    if proc.returncode != 0:
-        # formatter は壊れた構文では非 0 を返す。元 text を返す。
-        return RepairResult(text=text, applied=False, tool="format", stderr=_trim(proc.stderr))
-
-    formatted = proc.stdout
-    if not formatted.endswith("\n"):
-        formatted += "\n"
-
-    return RepairResult(
-        text=formatted,
-        applied=(formatted != text),
-        tool="format",
-        stderr=_trim(proc.stderr),
-    )
-
-
 def run_one(
     sample: dict,
     elixir_bin: str,
     timeout: float,
-    mechanical_repair: bool = False,
 ) -> dict:
-    """1 サンプル評価。`elixir <file>` で parse + compile + ExUnit を一気に走らせる。
-
-    mechanical_repair=True なら `Code.format_string!` を **prompt+completion** に適用
-    してから評価する。tests を repair の context に含めない (Goodhart 回避)。
-    """
+    """1 サンプル評価。`elixir <file>` で parse + compile + ExUnit を一気に走らせる。"""
     prompt = sample["prompt"]
     completion = sample["completion"]
     tests = sample["tests"]
@@ -179,17 +110,10 @@ def run_one(
         "test_stderr": "",
         "exit_code": None,
         "elapsed_sec": 0.0,
-        "repair_applied": False,
-        "repair_tool": "",
         "timed_out": False,
     }
 
     body = prompt + completion
-    if mechanical_repair:
-        repair = format_repair(body, elixir_bin)
-        body = repair.text
-        result["repair_applied"] = repair.applied
-        result["repair_tool"] = repair.tool
 
     # `.exs` は script モード。ExUnit.start() がテスト側に含まれている前提
     # (MultiPL-E elixir の test 文字列が ExUnit.start() を含む)。
@@ -267,8 +191,6 @@ def main():
         sample_files = sample_files[: args.limit]
     print(f"Evaluating {len(sample_files)} samples from {gen_dir}")
     print(f"  elixir = {elixir_bin}")
-    if args.mechanical_repair:
-        print("  mechanical_repair = ON (Code.format_string!)")
 
     per_sample = []
     counts = Counter()
@@ -280,7 +202,6 @@ def main():
             sample,
             elixir_bin=elixir_bin,
             timeout=args.timeout,
-            mechanical_repair=args.mechanical_repair,
         )
         per_sample.append(r)
 
@@ -298,8 +219,6 @@ def main():
         ):
             if r[key]:
                 counts[key] += 1
-        if r.get("repair_applied"):
-            counts["repair_applied"] += 1
 
         status = "TEST ✓" if r["test_ok"] else "TEST ✗"
         status += " · " + ("CMP ✓" if r["compile_ok"] else "CMP ✗")
@@ -328,8 +247,6 @@ def main():
         "elapsed_total_sec": elapsed,
         "generated_dir": str(gen_dir),
         "elixir_bin": elixir_bin,
-        "mechanical_repair_enabled": args.mechanical_repair,
-        "repair_applied_count": counts["repair_applied"],
     }
     (out_dir / "_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
 
@@ -351,8 +268,6 @@ def main():
         f"  TERTIARY  assertion failure rate: "
         f"{summary['assertion_failure_rate'] * 100:6.2f}% ({counts['has_assertion_failure']}/{n})"
     )
-    if args.mechanical_repair:
-        print(f"  REPAIR    format applied        : {counts['repair_applied']}/{n}")
     print(f"\nwrote -> {out_dir / '_summary.json'}")
 
 

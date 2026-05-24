@@ -75,7 +75,7 @@ Go 版 mbpp-go ablation で bias 単独寄与が不可視、Elixir では surfac
 | Decoder | `KotodamaDecoder` (decode + bias + Firewall) | **`FirewallDecoder`** (decode + Firewall、bias 撤去) |
 | L5 評価器 | [yomi_evaluator.py](../src_min_go/kojiki_lm/yomi_evaluator.py) (Go 用語彙) | `src_min_eli2/elixir_evaluator.py` 新規 |
 | ~~Symbol oracle~~ | `go/types` daemon | **撤去** (bias 機構と一緒に) |
-| Mechanical REPAIR | `goimports` | `elixir_mechanical_repair.py` (`Code.format_string!` subprocess) |
+| Mechanical REPAIR | `goimports` | **撤去** (`Code.format_string!` は AST 保存変換で compile/test に効果ゼロのため、効果対象が出てから再設計) |
 | Dataset | humaneval-go (154) / mbpp-go (374) | humaneval-elixir (161) / mbpp-elixir (397) |
 | Ablation mode | 4 (full / no-kotodama / no-firewall / vanilla) | **2** (firewall-on / firewall-off) |
 
@@ -85,7 +85,7 @@ Go 版 mbpp-go ablation で bias 単独寄与が不可視、Elixir では surfac
 |---|---|---|
 | 1 | src_min_go から Python core を copy (Firewall / Qwen adapter / data 等) | ✅ |
 | 2 | `elixir_evaluator.py` (L5 ヒューリスティック評価器) | ✅ |
-| 3 | `elixir_mechanical_repair.py` (`Code.format_string!` subprocess) | ✅ |
+| 3 | ~~`elixir_mechanical_repair.py`~~ | 撤去 (整形のみで compile/test 影響ゼロ、surface area 不在) |
 | 4 | `firewall_decoder.py` (旧 KotodamaDecoder から bias 撤去) | ✅ |
 | 5 | `run_baseline_elixir.py` / `run_yamato_min_elixir.py` (2 mode: firewall-on / firewall-off) | ✅ |
 | 6 | `elixir_eval.py` (`elixir <file>` subprocess 評価) | ✅ |
