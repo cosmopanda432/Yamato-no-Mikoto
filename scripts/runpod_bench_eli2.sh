@@ -13,8 +13,8 @@
 #   bash scripts/runpod_bench_eli2.sh setup            # 約 10-15 分 (model DL 14GB が支配的)
 #   bash scripts/runpod_bench_eli2.sh smoke            # 約 2 分    (firewall-off × 5 問)
 #   bash scripts/runpod_bench_eli2.sh baseline 0       # 約 15-25 分 (1 seed × 161 問)
-#   bash scripts/runpod_bench_eli2.sh pilot 0          # 約 1.5-2h   (4 mode × seed 0 + judge)
-#   bash scripts/runpod_bench_eli2.sh ci               # 約 3-4h     (4 mode × seed 1+2 を追加)
+#   bash scripts/runpod_bench_eli2.sh pilot 0          # 約 1-1.5h   (2 mode × seed 0 + judge)
+#   bash scripts/runpod_bench_eli2.sh ci               # 約 2.5-3h   (baseline + 2 mode × seed 1+2 を追加、3 seed CI)
 #
 # 環境変数:
 #   REPO_ROOT          リポジトリルート (default: スクリプトの 1 つ上)
@@ -255,7 +255,7 @@ cmd_baseline() {
 
 cmd_pilot() {
     local seed="${1:-0}"
-    log "=== pilot: 4 ablation mode × seed $seed (then judge against saved baseline) ==="
+    log "=== pilot: 2 mode (firewall-on/off) × seed $seed (then judge against saved baseline) ==="
     for mode in "${MODES[@]}"; do
         run_yamato_mode_seed "$mode" "$seed"
     done
@@ -265,9 +265,13 @@ cmd_pilot() {
     log "pilot done. judge JSONs at baselines/yamato_min_elixir.*.seed${seed}.judge.json"
 }
 
+# 3-seed 95% CI 判定用フェーズ。seed 1/2 で baseline + 2 mode の yamato を生成し、
+# judge を seeds=[0,1,2] で再実行。baseline seed 1/2 を含めないと judge が
+# `missing baseline summary` で fail するため、yamato と並んで baseline も回す。
 cmd_ci() {
-    log "=== ci: seeds 1 and 2 を追加で回し、3 seed で 95% CI 判定 ==="
+    log "=== ci: baseline + 2 mode × seed 1/2 を追加で回し、3 seed で 95% CI 判定 ==="
     for seed in 1 2; do
+        run_baseline_seed "$seed"
         for mode in "${MODES[@]}"; do
             run_yamato_mode_seed "$mode" "$seed"
         done
