@@ -1,0 +1,142 @@
+{
+  "mode": "firewall-on",
+  "n_seeds_baseline": 1,
+  "n_seeds_yamato": 1,
+  "n_total": 397,
+  "baseline": {
+    "test_pass_rate": {
+      "mean": 0.3778337531486146,
+      "sd": 0.0,
+      "ci_low": 0.3778337531486146,
+      "ci_high": 0.3778337531486146,
+      "per_seed": [
+        0.3778337531486146
+      ]
+    },
+    "compile_pass_rate": {
+      "mean": 0.8690176322418136,
+      "sd": 0.0,
+      "ci_low": 0.8690176322418136,
+      "ci_high": 0.8690176322418136,
+      "per_seed": [
+        0.8690176322418136
+      ]
+    },
+    "undefined_rate": {
+      "mean": 0.020151133501259445,
+      "sd": 0.0,
+      "ci_low": 0.020151133501259445,
+      "ci_high": 0.020151133501259445,
+      "per_seed": [
+        0.020151133501259445
+      ]
+    },
+    "assertion_failure_rate": {
+      "mean": 0.2619647355163728,
+      "sd": 0.0,
+      "ci_low": 0.2619647355163728,
+      "ci_high": 0.2619647355163728,
+      "per_seed": [
+        0.2619647355163728
+      ]
+    },
+    "function_clause_rate": {
+      "mean": 0.07556675062972293,
+      "sd": 0.0,
+      "ci_low": 0.07556675062972293,
+      "ci_high": 0.07556675062972293,
+      "per_seed": [
+        0.07556675062972293
+      ]
+    },
+    "timeout_rate": {
+      "mean": 0.0,
+      "sd": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "per_seed": [
+        0.0
+      ]
+    }
+  },
+  "yamato": {
+    "test_pass_rate": {
+      "mean": 0.40302267002518893,
+      "sd": 0.0,
+      "ci_low": 0.40302267002518893,
+      "ci_high": 0.40302267002518893,
+      "per_seed": [
+        0.40302267002518893
+      ]
+    },
+    "compile_pass_rate": {
+      "mean": 0.8967254408060453,
+      "sd": 0.0,
+      "ci_low": 0.8967254408060453,
+      "ci_high": 0.8967254408060453,
+      "per_seed": [
+        0.8967254408060453
+      ]
+    },
+    "undefined_rate": {
+      "mean": 0.017632241813602016,
+      "sd": 0.0,
+      "ci_low": 0.017632241813602016,
+      "ci_high": 0.017632241813602016,
+      "per_seed": [
+        0.017632241813602016
+      ]
+    },
+    "assertion_failure_rate": {
+      "mean": 0.2795969773299748,
+      "sd": 0.0,
+      "ci_low": 0.2795969773299748,
+      "ci_high": 0.2795969773299748,
+      "per_seed": [
+        0.2795969773299748
+      ]
+    },
+    "function_clause_rate": {
+      "mean": 0.07808564231738035,
+      "sd": 0.0,
+      "ci_low": 0.07808564231738035,
+      "ci_high": 0.07808564231738035,
+      "per_seed": [
+        0.07808564231738035
+      ]
+    },
+    "timeout_rate": {
+      "mean": 0.0,
+      "sd": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "per_seed": [
+        0.0
+      ]
+    }
+  },
+  "deltas_pp": {
+    "test_pass_rate": 0.02518891687657432,
+    "compile_pass_rate": 0.027707808564231717,
+    "undefined_rate": -0.00251889168765743,
+    "assertion_failure_rate": 0.017632241813602012,
+    "function_clause_rate": 0.0025188916876574263
+  },
+  "win_condition": {
+    "primary": {
+      "metric": "test_pass_rate",
+      "threshold_pp": 0.05,
+      "delta_pp": 0.02518891687657432,
+      "passed": false,
+      "ci_lower_clears_threshold": false
+    },
+    "secondary": {
+      "metric": "compile_pass_rate",
+      "threshold_pp": 0.05,
+      "delta_pp": 0.027707808564231717,
+      "passed": false,
+      "ci_lower_clears_threshold": false
+    },
+    "overall": false
+  }
+}
