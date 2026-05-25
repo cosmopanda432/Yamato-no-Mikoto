@@ -59,12 +59,21 @@ class TraceStatus(Enum):
 class KoumyouSoConfig:
     """光明想の閾値設定。"""
 
-    min_trace_lines: int = 2
-    """`# 思考:` 行が最低この本数なければ INSUFFICIENT。"""
+    min_trace_lines: int = 1
+    """`# 思考:` 行が最低この本数なければ INSUFFICIENT。
+
+    Note (2026-05-26 smoke 知見): Qwen2.5-Coder-Instruct は「1 行に comma 区切りで
+    全 step を詰める」スタイル (e.g. `1. ..., 2. ..., 3. ...`) を好む。bare prompt
+    + trace seed のみだと multi-line trace に誘導しきれないため、デフォルトは 1
+    に下げた。multi-line trace を要求する場合は呼び出し側で 2 以上に設定する
+    (prompt 強化と組み合わせる前提)。
+    """
 
     min_trace_chars: int = 20
     """trace の中身 (marker を除いた本文) の合計文字数の下限。
     無意味な padding (e.g. `# 思考: a`) で gaming するのを防ぐ。
+    1 行 trace でも substance を担保する主要 gate (上記 min_trace_lines の制約緩和
+    に伴い、こちらが事実上の主軸チェックになる)。
     """
 
     grace_period_chars: int = 16

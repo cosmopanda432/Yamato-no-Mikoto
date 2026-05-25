@@ -58,8 +58,8 @@ eli2 は **一切変更していない** (`feedback-prove-and-handoff` の保全
 ない行」。
 
 デフォルト閾値 (`KoumyouSoConfig`):
-- `min_trace_lines = 2`
-- `min_trace_chars = 20` (marker 除く本文)
+- `min_trace_lines = 1` (2026-05-26 smoke 知見で 2→1 に下げた、後述「既知の制約」参照)
+- `min_trace_chars = 20` (marker 除く本文、主軸 gate)
 - `grace_period_chars = 16`
 
 ## Prompt の trace seed 注入
@@ -129,3 +129,9 @@ python3 scripts/eval/elixir_eval.py \
   (gameable のため)。次の強化は「trace 本文と code の semantic 整合」だがコスト高。
 - **chat template 未使用**: bare prompt で運用 (eli2 と同じ baseline 軸)。chat template 化
   すると trace 遵守率は上がるが、baseline との分布差で ablation が clean でなくなる。
+- **multi-line trace は強制できない (2026-05-26 smoke 知見)**: Qwen2.5-Coder-Instruct
+  は bare prompt + trace seed のみだと「1 行に comma 区切りで全 step を詰める」スタイル
+  (e.g. `# 思考: 1. xxx, 2. yyy, 3. zzz`) を好む。中国語/英語/日本語いずれの reasoning
+  でも同様。**`min_trace_lines` のデフォルトを 1 に下げ**、`min_trace_chars=20` を主軸
+  gate とした。multi-line を要求する場合は prompt 強化 (instruction comment の prepend
+  or chat template 化) と組み合わせる必要がある。

@@ -51,7 +51,7 @@ MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-256}"
 TEMPERATURE="${TEMPERATURE:-0.2}"
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
 DATASET="${DATASET:-humaneval-elixir}"
-MIN_TRACE_LINES="${MIN_TRACE_LINES:-2}"
+MIN_TRACE_LINES="${MIN_TRACE_LINES:-1}"
 MIN_TRACE_CHARS="${MIN_TRACE_CHARS:-20}"
 
 PARQUET="$REPO_ROOT/data/raw/multipl_e/${DATASET}/test-00000-of-00001.parquet"
@@ -228,10 +228,13 @@ cmd_smoke() {
     LIMIT=5 SKIP_EXISTING=0 run_yamato_mode_seed koumyou-on 0
     local gen_dir="data/eval/generated/${DATASET}.yamato_min_elixir3.koumyou-on.seed0"
     log "smoke complete. trace_info の status 分布:"
-    python3 - <<PY
-import json, glob
+    # 注: heredoc 内で ${gen_dir} はシェル展開、{gen_dir} は f-string 評価される
+    # ため、両者の混在は NameError を起こす。env 経由で受け渡す。
+    GEN_DIR="$gen_dir" python3 - <<'PY'
+import json, os, glob
 from collections import Counter
-files = sorted(glob.glob("${gen_dir}/*.json"))
+gen_dir = os.environ["GEN_DIR"]
+files = sorted(glob.glob(gen_dir + "/*.json"))
 print(f"  files: {len(files)}")
 statuses = Counter()
 halt_count = 0

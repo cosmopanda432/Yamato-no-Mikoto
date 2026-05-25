@@ -93,10 +93,12 @@ def parse_args():
     ap.add_argument("--seed", type=int, default=0)
 
     # 光明想 (KoumyouSo) thresholds
-    ap.add_argument("--min-trace-lines", type=int, default=2,
+    # default 1 line / 20 chars (2026-05-26 smoke 知見: Qwen は 1 行 comma-separated
+    # 形式を好み、min_trace_lines=2 では over-rejection になる)
+    ap.add_argument("--min-trace-lines", type=int, default=1,
                     help="`# 思考:` 行が最低この本数なければ HALT (mode=koumyou-on のみ有効)")
     ap.add_argument("--min-trace-chars", type=int, default=20,
-                    help="trace 本文の合計文字数下限 (mode=koumyou-on のみ有効)")
+                    help="trace 本文の合計文字数下限 (mode=koumyou-on のみ有効、主軸 gate)")
     ap.add_argument("--grace-period-chars", type=int, default=16,
                     help="generated text 長がこれ未満なら trace 判定保留 (HALT しない)")
 
