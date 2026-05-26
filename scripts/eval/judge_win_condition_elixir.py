@@ -224,7 +224,7 @@ def parse_args():
     ap.add_argument("--yamato", nargs="+", required=True,
                     help="yamato 側の per-seed _summary.json (1 個以上)")
     ap.add_argument("--mode", default="firewall-on",
-                    choices=["firewall-on", "firewall-off"],
+                    choices=["firewall-on", "firewall-off", "koumyou-on"],
                     help="表示用 (yamato 側がどの ablation mode で生成されたか)")
     ap.add_argument("--out", required=True)
     return ap.parse_args()
