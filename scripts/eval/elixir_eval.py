@@ -261,7 +261,12 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    sample_files = sorted(gen_dir.glob("*.json"))
+    # 產屋 (eli4) runner が out_dir 直下に置く `_repair_summary.json` 等の
+    # メタファイルを sample として誤読しないよう、先頭 "_" のファイルは除外する
+    # (既存 gen dir に `_*.json` は無いため、この変更は既存挙動に影響しない)。
+    sample_files = sorted(
+        f for f in gen_dir.glob("*.json") if not f.name.startswith("_")
+    )
     if args.limit is not None:
         sample_files = sample_files[: args.limit]
     print(f"Evaluating {len(sample_files)} samples from {gen_dir}")

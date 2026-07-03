@@ -14,6 +14,7 @@ elixir が PATH に無い環境でも regex 抽出そのものは fixture 文字
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -254,6 +255,82 @@ def test_hack_gap_boundary_0_7_is_included(ee):
 # ---------------------------------------------------------------------------
 # 既存 field / 既存 metric の回帰確認 (DoD-D (iii))
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# main() の sample glob — `_repair_summary.json` 等のメタファイルを除外する
+# (產屋 eli4 runner の出力 dir に対する回帰: KeyError: 'prompt' クラッシュ防止)
+# ---------------------------------------------------------------------------
+
+
+def _stub_run_one_result(name: str) -> dict:
+    return {
+        "name": name,
+        "seed": 0,
+        "module_name": "Sample",
+        "test_ok": True,
+        "compile_ok": True,
+        "has_undefined": False,
+        "has_assertion_failure": False,
+        "has_function_clause": False,
+        "has_token_missing": False,
+        "has_syntax_error": False,
+        "has_compile_error": False,
+        "test_stderr": "",
+        "exit_code": 0,
+        "elapsed_sec": 0.01,
+        "timed_out": False,
+        "undef_symbols": [],
+        "did_you_mean": [],
+        "final_v_score": None,
+        "final_verdict": None,
+    }
+
+
+def test_main_skips_underscore_prefixed_meta_files(ee, tmp_path, monkeypatch):
+    """gen dir に `_repair_summary.json` (產屋 eli4 の repair-loop 出力) が
+    混ざっていても、main() は sample として読まずクラッシュしないこと。"""
+    gen_dir = tmp_path / "gen"
+    gen_dir.mkdir()
+    out_dir = tmp_path / "out"
+
+    sample = {
+        "name": "HumanEval_0",
+        "seed": 0,
+        "prompt": "defmodule Sample do\n",
+        "completion": "end\n",
+        "tests": "",
+    }
+    (gen_dir / "HumanEval_0__s0.json").write_text(json.dumps(sample), encoding="utf-8")
+    # prompt 等を持たない meta file。誤って sample として読まれると
+    # run_one 内で KeyError: 'prompt' になる。
+    (gen_dir / "_repair_summary.json").write_text(
+        json.dumps({"n_prompts": 1}), encoding="utf-8"
+    )
+
+    calls = []
+
+    def _fake_run_one(sample, elixir_bin, timeout):
+        calls.append(sample["name"])
+        return _stub_run_one_result(sample["name"])
+
+    monkeypatch.setattr(ee, "run_one", _fake_run_one)
+    monkeypatch.setattr(ee.shutil, "which", lambda name: "/usr/bin/elixir")
+
+    argv_backup = sys.argv
+    try:
+        sys.argv = [
+            "elixir_eval.py",
+            "--generated-dir", str(gen_dir),
+            "--out-dir", str(out_dir),
+        ]
+        ee.main()
+    finally:
+        sys.argv = argv_backup
+
+    assert calls == ["HumanEval_0"]
+    summary = json.loads((out_dir / "_summary.json").read_text(encoding="utf-8"))
+    assert summary["n_total"] == 1
 
 
 def test_run_one_existing_fields_unchanged_shape(ee):
