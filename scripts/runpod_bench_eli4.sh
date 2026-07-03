@@ -160,7 +160,7 @@ run_yamato_mode_seed() {
         --min-trace-chars "$MIN_TRACE_CHARS" \
         "${repair_flags[@]}" \
         "${limit_flag[@]}" \
-        $( [[ "$SKIP_EXISTING" == "1" ]] && echo --skip-existing )
+        $( [[ "$SKIP_EXISTING" == "1" && "$mode" != "repair-on" ]] && echo --skip-existing )
 
     log "yamato4 mode=$mode seed=$seed: evaluating with elixir_eval.py"
     python3 scripts/eval/elixir_eval.py \
