@@ -376,3 +376,215 @@ def test_truncate_at_stop_tokens_matches_eli3(runner, eli3_runner):
     assert runner.truncate_at_stop_tokens(text, ["STOP"]) == (
         eli3_runner.truncate_at_stop_tokens(text, ["STOP"])
     )
+
+
+# ---------------------------------------------------------------------------
+# 最終レビュー Fix 3: ashibune 記録タイミング (fresh-run truncation / record 内容不変)
+# ---------------------------------------------------------------------------
+
+
+def _synthetic_attempt(**overrides) -> dict:
+    base = {
+        "name": "HumanEval_0",
+        "round": 0,
+        "hint": "",
+        "repair_reason": "",
+        "prompt": "defmodule Foo do\n",
+        "tests": "ExUnit.start()\n",
+        "stop_tokens": [],
+        "completion": "end\n",
+        "raw_completion": "end\n",
+        "seed_used": 12345,
+        "elapsed_sec": 0.5,
+        "firewall_enabled": True,
+        "total_step_count": 3,
+        "halted_early": False,
+        "stopped_at_stop_token": False,
+        "final_verdict": "commit",
+        "v_score": 0.9,
+        "hint_from_verdict": "",
+        "trace_info": {"status": "ok", "n_thought_lines": 1,
+                        "trace_body_chars": 30, "code_started": True},
+        "test_ok": True,
+        "has_undefined": False,
+        "exit_code": 0,
+        "test_stderr": "",
+        "undef_symbols": [],
+        "did_you_mean": [],
+        "reason_code": "none",
+        "accepted": False,
+        "is_final_answer": False,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_reset_ashibune_log_truncates_stale_file(runner, tmp_path):
+    """再実行で同じ out_dir に前回実行の record が残っていても、
+    `_reset_ashibune_log` はファイルを空にしてから返す (fresh run = fresh log)。"""
+    path = tmp_path / "ashibune.jsonl"
+    path.write_text('{"stale": "record from previous run"}\n', encoding="utf-8")
+
+    log = runner._reset_ashibune_log(path)
+
+    assert path.read_text(encoding="utf-8") == ""
+
+    from kojiki_lm.ashibune import AshibuneRecord
+
+    log.append(AshibuneRecord(
+        ts="2026-07-03T00:00:00Z", prompt_id="HumanEval_0", mode="repair-on",
+        round=0, seed_used=1, verdict="commit", v_score=0.9, reason_code="none",
+        hint_used="", halted_early=False, stopped_at_stop_token=False,
+        test_ok=True, has_undefined=False, exit_code=0, completion_chars=4,
+        raw_completion="end\n", accepted=True, is_final_answer=True,
+    ))
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert "stale" not in lines[0]
+
+
+def test_reset_ashibune_log_creates_parent_dir(runner, tmp_path):
+    path = tmp_path / "nested" / "ashibune.jsonl"
+    assert not path.parent.exists()
+    runner._reset_ashibune_log(path)
+    assert path.exists()
+    assert path.read_text(encoding="utf-8") == ""
+
+
+def test_attempt_to_ashibune_record_transcribes_all_18_fields(runner):
+    """`_attempt_to_ashibune_record` が旧 finalize 一括書き出しと同じ 18 field を
+    同じ値で転記すること (WHAT は変えない、の担保)。"""
+    attempt = _synthetic_attempt(accepted=True, is_final_answer=True)
+    record = runner._attempt_to_ashibune_record("repair-on", attempt)
+
+    assert record.prompt_id == attempt["name"]
+    assert record.mode == "repair-on"
+    assert record.round == attempt["round"]
+    assert record.seed_used == attempt["seed_used"]
+    assert record.verdict == attempt["final_verdict"]
+    assert record.v_score == attempt["v_score"]
+    assert record.reason_code == attempt["reason_code"]
+    assert record.hint_used == attempt["hint"]
+    assert record.halted_early == attempt["halted_early"]
+    assert record.stopped_at_stop_token == attempt["stopped_at_stop_token"]
+    assert record.test_ok == attempt["test_ok"]
+    assert record.has_undefined == attempt["has_undefined"]
+    assert record.exit_code == attempt["exit_code"]
+    assert record.completion_chars == len(attempt["completion"])
+    assert record.raw_completion == attempt["raw_completion"]
+    assert record.accepted == attempt["accepted"]
+    assert record.is_final_answer == attempt["is_final_answer"]
+    assert record.ts  # 非空の ISO timestamp
+
+
+def test_build_final_sample_payload_matches_expected_shape(runner):
+    row = {"tests": "ExUnit.start()\n"}
+    final = _synthetic_attempt(round=1, hint="型を確認せよ", repair_reason="undef_symbol")
+
+    class _Args:
+        seed = 7
+        model = "m"
+        quantize = "4bit"
+        temperature = 0.2
+        mode = "repair-on"
+
+    payload = runner._build_final_sample_payload(
+        "HumanEval_0", final, row, _Args(), koumyou_enabled=True, n_attempts=2,
+    )
+
+    assert payload["name"] == "HumanEval_0"
+    assert payload["seed"] == 7
+    assert payload["completion"] == final["completion"]
+    assert payload["raw_completion"] == final["raw_completion"]
+    assert payload["tests"] == row["tests"]
+    assert payload["round"] == 1
+    assert payload["hint"] == "型を確認せよ"
+    assert payload["n_attempts"] == 2
+    assert payload["repair_reason"] == "undef_symbol"
+    assert payload["trace_seed"] == runner.TRACE_SEED
+
+
+def test_resolve_sample_marks_only_last_attempt_accepted(runner, tmp_path):
+    """`_resolve_sample` は attempts[-1] だけを accepted/is_final_answer=True にし、
+    他の attempt は False のままにする (旧 finalize と同じ意味論)。"""
+    attempts_by_name = {
+        "HumanEval_0": [
+            _synthetic_attempt(round=0, test_ok=False),
+            _synthetic_attempt(round=1, test_ok=True),
+        ]
+    }
+    prompts_by_name = {"HumanEval_0": {"tests": "ExUnit.start()\n"}}
+
+    class _Args:
+        seed = 0
+        model = "m"
+        quantize = "4bit"
+        temperature = 0.2
+        mode = "repair-on"
+
+    ashibune_log = runner._reset_ashibune_log(tmp_path / "ashibune.jsonl")
+    runner._resolve_sample(
+        "HumanEval_0",
+        attempts_by_name=attempts_by_name, prompts_by_name=prompts_by_name,
+        args=_Args(), koumyou_enabled=True, ashibune_log=ashibune_log,
+        out_dir=tmp_path,
+    )
+
+    atts = attempts_by_name["HumanEval_0"]
+    assert atts[0]["accepted"] is False
+    assert atts[0]["is_final_answer"] is False
+    assert atts[1]["accepted"] is True
+    assert atts[1]["is_final_answer"] is True
+
+    lines = (tmp_path / "ashibune.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+
+    import json as _json
+    final_json = _json.loads((tmp_path / "HumanEval_0__s0.json").read_text(encoding="utf-8"))
+    assert final_json["n_attempts"] == 2
+    assert final_json["round"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 最終レビュー Fix 4: --skip-existing は mode=repair-on では fail-fast
+# ---------------------------------------------------------------------------
+
+
+def test_validate_repair_skip_existing_raises_when_both_set(runner):
+    class _Args:
+        mode = "repair-on"
+        skip_existing = True
+
+    with pytest.raises(SystemExit):
+        runner.validate_repair_skip_existing(_Args())
+
+
+def test_validate_repair_skip_existing_ok_when_skip_existing_false(runner):
+    class _Args:
+        mode = "repair-on"
+        skip_existing = False
+
+    runner.validate_repair_skip_existing(_Args())  # raise しない
+
+
+def test_validate_repair_skip_existing_ok_for_other_modes(runner):
+    class _Args:
+        mode = "koumyou-on"
+        skip_existing = True
+
+    runner.validate_repair_skip_existing(_Args())  # repair-on 以外は無関係
+
+
+# ---------------------------------------------------------------------------
+# 最終レビュー Fix 4: _TRACE_HALT_REASON_CODES は ReasonCode enum 由来
+# ---------------------------------------------------------------------------
+
+
+def test_trace_halt_reason_codes_derived_from_reason_code_enum(runner):
+    from kojiki_lm.yomotsu_hirasaka import ReasonCode
+
+    assert runner._TRACE_HALT_REASON_CODES == {
+        ReasonCode.TRACE_MISSING.value,
+        ReasonCode.TRACE_INSUFFICIENT.value,
+    }

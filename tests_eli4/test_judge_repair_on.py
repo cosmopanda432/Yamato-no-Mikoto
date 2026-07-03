@@ -189,3 +189,21 @@ def test_terminal_alarm_absent_when_only_pass_worsens():
 
 def test_hack_gap_soft_alarm_threshold_constant_value():
     assert judge_mod.HACK_GAP_SOFT_ALARM == 0.15
+
+
+def test_both_soft_and_terminal_alarms_show_when_both_conditions_fire():
+    """小衰 (hack_gap 閾値超) と大衰 (undef 悪化 かつ pass 悪化) は独立した bool
+    条件だが、両方同時に成立するケースを固定 (reviewer 指摘のロック)。"""
+    baseline = judge_mod.aggregate(
+        [_summary(undefined_rate=0.05, test_pass_rate=0.5, hack_gap=0.0)]
+    )
+    yamato = judge_mod.aggregate(
+        [_summary(undefined_rate=0.10, test_pass_rate=0.3, hack_gap=0.2)]  # > 0.15
+    )
+    verdict = judge_mod.judge(baseline, yamato, "repair-on")
+    report = judge_mod.render_report(verdict)
+
+    assert "小衰" in report
+    assert "proxy (v_score) 改訂を検討" in report
+    assert "大衰" in report
+    assert "arm 廃棄を勧告" in report

@@ -138,7 +138,7 @@ HINT_MAX_DYM = 2
 # 常に実行されるため、たまたま部分コードが undef_symbols を生む可能性がある —
 # この場合でも trace_* が最優先で hint なしになるよう、undef_symbols チェックより
 # 前に判定する。
-_TRACE_HALT_REASON_CODES = {"trace_missing", "trace_insufficient"}
+_TRACE_HALT_REASON_CODES = {ReasonCode.TRACE_MISSING.value, ReasonCode.TRACE_INSUFFICIENT.value}
 
 
 def build_hint(eval_result: dict) -> str:
@@ -203,6 +203,26 @@ def resolve_elixir_bin(elixir_bin_arg: str | None) -> str:
             "PATH に無ければ --elixir-bin で明示的にパスを指定してください。"
         )
     return resolved
+
+
+def validate_repair_skip_existing(args) -> None:
+    """`--skip-existing` は mode=repair-on では非対応であることを起動直後に fail-fast する。
+
+    repair-on の出力 (`<name>__s0.json`) は round 型 REPAIR 消尽後の最終回答であり、
+    `_run_single_pass` の skip-existing チェック (out_path.exists() で単純スキップ) を
+    そのまま repair-on に適用すると「round 0 の初回生成すら行われず、直前の
+    (途中状態かもしれない) 出力がそのまま最終回答として扱われる」事故が起きる。
+    repair-on は現状 skip-existing を一切実装していない (`_run_repair_loop` は
+    無条件に全 prompt を round 0 から生成する) ため、指定しても黙って無視されるだけ —
+    これは静かな事故のもとなので、両方渡された場合は起動直後に明示的に止める。
+    """
+    if args.mode == "repair-on" and args.skip_existing:
+        raise SystemExit(
+            "--skip-existing は mode=repair-on では使えません "
+            "(repair loop は常に round 0 から全 prompt を再生成するため、"
+            "--skip-existing を指定しても黙って無視されます)。"
+            "--skip-existing を外して実行してください。"
+        )
 
 
 def build_repair_summary(attempts_by_name: dict[str, list[dict]], max_rounds: int) -> dict:
@@ -482,12 +502,125 @@ def _write_round_sample_json(round_dir: Path, attempt: dict, args, koumyou_enabl
     }, ensure_ascii=False))
 
 
+def _reset_ashibune_log(path: Path) -> AshibuneLog:
+    """`ashibune.jsonl` を空で作り直してから `AshibuneLog` を返す。
+
+    `AshibuneLog.append` は追記専用 (プロセス途中終了時の記録欠落を防ぐための
+    設計) なので、同じ out_dir に再実行したときに前回実行の record へ追記して
+    しまわないよう、fresh run の起点でファイル自体を空に作り直す責務はここに置く。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("", encoding="utf-8")
+    return AshibuneLog(path)
+
+
+def _attempt_to_ashibune_record(mode: str, attempt: dict) -> AshibuneRecord:
+    """1 attempt dict (`_finish_attempt` の返り値) を `AshibuneRecord` に変換する。
+
+    record の中身 (18 field) は旧 finalize 一括書き出しと完全に同一。呼び出し
+    タイミングだけを変える (§産屋レビュー: WHEN を変える、WHAT は変えない)。
+    """
+    return AshibuneRecord(
+        ts=_now_iso(),
+        prompt_id=attempt["name"],
+        mode=mode,
+        round=attempt["round"],
+        seed_used=attempt["seed_used"],
+        verdict=attempt["final_verdict"],
+        v_score=attempt["v_score"],
+        reason_code=attempt["reason_code"],
+        hint_used=attempt["hint"],
+        halted_early=attempt["halted_early"],
+        stopped_at_stop_token=attempt["stopped_at_stop_token"],
+        test_ok=attempt["test_ok"],
+        has_undefined=attempt["has_undefined"],
+        exit_code=attempt["exit_code"],
+        completion_chars=len(attempt["completion"]),
+        raw_completion=attempt["raw_completion"],
+        accepted=attempt["accepted"],
+        is_final_answer=attempt["is_final_answer"],
+    )
+
+
+def _build_final_sample_payload(name: str, final: dict, row: dict, args,
+                                 koumyou_enabled: bool, n_attempts: int) -> dict:
+    """最終回答 `<name>__s0.json` の中身を合成する純粋関数 (旧 finalize block と同一)。"""
+    return {
+        "name": name,
+        "sample_id": 0,
+        "seed": args.seed,
+        "prompt": final["prompt"],
+        "completion": final["completion"],
+        "raw_completion": final["raw_completion"],
+        "tests": row["tests"],
+        "stop_tokens": final["stop_tokens"],
+        "model": args.model,
+        "quantize": args.quantize,
+        "temperature": args.temperature,
+        "elapsed_sec": final["elapsed_sec"],
+        "language": "elixir",
+        "firewall_mode": args.mode,
+        "firewall_enabled": final["firewall_enabled"],
+        "koumyou_enabled": koumyou_enabled,
+        "trace_seed": TRACE_SEED if koumyou_enabled else "",
+        "total_step_count": final["total_step_count"],
+        "halted_early": final["halted_early"],
+        "stopped_at_stop_token": final["stopped_at_stop_token"],
+        "final_verdict": final["final_verdict"],
+        "final_v_score": final["v_score"],
+        "trace_info": final["trace_info"],
+        # 產屋 REPAIR 追加 field (§5.3)
+        "round": final["round"],
+        "hint": final["hint"],
+        "n_attempts": n_attempts,
+        "repair_reason": final["repair_reason"],
+    }
+
+
+def _resolve_sample(name: str, *, attempts_by_name: dict[str, list[dict]],
+                     prompts_by_name: dict[str, dict], args, koumyou_enabled: bool,
+                     ashibune_log: AshibuneLog, out_dir: Path) -> None:
+    """1 sample の fate が確定した時点で呼ぶ: 葦船へ全 attempt を記録し、
+    最終回答 JSON を書く (§産屋レビュー Fix 3)。
+
+    呼び出しタイミング (いずれか最初に成立した時点):
+      (a) いずれかの attempt が test_ok=True になった
+      (b) greedy no-hint retry で以降の再試行を打ち切った (retry しても無意味)
+      (c) 最終 round が完了してもなお失敗のまま (max_rounds 消尽)
+
+    以降そのバッチでこの name の attempts_by_name[name] に新規 attempt が
+    追加されることは無い、という前提のもとで呼ばれる (呼び出し側が保証する)。
+    """
+    attempts = attempts_by_name[name]
+    final = attempts[-1]
+    final["accepted"] = True
+    final["is_final_answer"] = True
+
+    for a in attempts:
+        ashibune_log.append(_attempt_to_ashibune_record(args.mode, a))
+
+    row = prompts_by_name[name]
+    payload = _build_final_sample_payload(name, final, row, args, koumyou_enabled, len(attempts))
+    (out_dir / f"{name}__s0.json").write_text(json.dumps(payload, ensure_ascii=False))
+
+
 def _run_repair_loop(args, rows, decoder, fw_cfg, backbone, tokenizer, out_dir,
                       firewall_enabled, koumyou_enabled, koumyou_so, elixir_bin):
-    ashibune_log = AshibuneLog(out_dir / "ashibune.jsonl")
+    # fresh run = fresh log (再実行で前回 record に追記しない、§産屋レビュー Fix 3)。
+    ashibune_log = _reset_ashibune_log(out_dir / "ashibune.jsonl")
     attempts_by_name: dict[str, list[dict]] = {}
     prompts_by_name: dict[str, dict] = {}
     name_to_index: dict[str, int] = {}
+    resolved: set[str] = set()
+
+    def _resolve(name: str) -> None:
+        _resolve_sample(
+            name,
+            attempts_by_name=attempts_by_name, prompts_by_name=prompts_by_name,
+            args=args, koumyou_enabled=koumyou_enabled,
+            ashibune_log=ashibune_log, out_dir=out_dir,
+        )
+        resolved.add(name)
 
     round0_dir = out_dir / "round_0"
     round0_dir.mkdir(parents=True, exist_ok=True)
@@ -541,6 +674,10 @@ def _run_repair_loop(args, rows, decoder, fw_cfg, backbone, tokenizer, out_dir,
         attempts_by_name[name] = [attempt]
         _write_round_sample_json(round0_dir, attempt, args, koumyou_enabled)
 
+        if attempt["test_ok"]:
+            # fate 確定 (a): round 0 で即成功、以降 repair round には乗らない。
+            _resolve(name)
+
         logger.info(
             "[round0 %d/%d] %s test_ok=%s verdict=%s reason=%s",
             i + 1, len(rows), name, attempt["test_ok"],
@@ -550,7 +687,8 @@ def _run_repair_loop(args, rows, decoder, fw_cfg, backbone, tokenizer, out_dir,
     # --- repair rounds (§5.3) ------------------------------------------------
     for r in range(1, args.max_rounds + 1):
         fail_names = [
-            name for name, atts in attempts_by_name.items() if not atts[-1]["test_ok"]
+            name for name, atts in attempts_by_name.items()
+            if not atts[-1]["test_ok"] and name not in resolved
         ]
         if not fail_names:
             logger.info("round %d: no failing sample remains, stop repair loop", r)
@@ -580,7 +718,9 @@ def _run_repair_loop(args, rows, decoder, fw_cfg, backbone, tokenizer, out_dir,
             hint = build_hint(eval_result)
 
             if hint == "" and not fw_cfg.do_sample:
-                # greedy では無 hint 再試行は無意味 (§5.3)
+                # greedy では無 hint 再試行は無意味 (§5.3)。
+                # fate 確定 (b): 以降 retry しても無意味なのでここで確定させる。
+                _resolve(name)
                 continue
 
             wrapped_prompt = build_wrapped_prompt(prompt, hint, koumyou_enabled)
@@ -593,6 +733,10 @@ def _run_repair_loop(args, rows, decoder, fw_cfg, backbone, tokenizer, out_dir,
             )
             elapsed = time.time() - t0
 
+            # round 0 は TRACE_SEED+text を丸ごと truncate するが (koumyou_enabled 時)、
+            # ここ (round >= 1) は text を先に truncate してから hint_line+TRACE_SEED を
+            # 前置する — 意図的な違い (round 0 の byte-identity を崩さないため。
+            # 両者を統一すると round 0 の completion 生成式が変わってしまう)。
             hint_line = build_hint_line(hint)
             body_truncated = truncate_at_stop_tokens(result.text, stop_tokens)
             if koumyou_enabled:
@@ -623,75 +767,21 @@ def _run_repair_loop(args, rows, decoder, fw_cfg, backbone, tokenizer, out_dir,
             attempts_by_name[name].append(attempt)
             _write_round_sample_json(round_dir, attempt, args, koumyou_enabled)
 
+            if attempt["test_ok"]:
+                # fate 確定 (a): この round で成功、以降 repair round には乗らない。
+                _resolve(name)
+
             logger.info(
                 "[round%d] %s test_ok=%s verdict=%s reason=%s (repair_reason=%s)",
                 r, name, attempt["test_ok"], attempt["final_verdict"],
                 attempt["reason_code"], attempt["repair_reason"],
             )
 
-    # --- finalize: 最終回答 = 「最初に test_ok になった attempt」、
-    #     無ければ最終 round の attempt (§5.3) ------------------------------
-    for attempts in attempts_by_name.values():
-        final = attempts[-1]
-        final["accepted"] = True
-        final["is_final_answer"] = True
-
-    for name, attempts in attempts_by_name.items():
-        for a in attempts:
-            ashibune_log.append(AshibuneRecord(
-                ts=_now_iso(),
-                prompt_id=name,
-                mode=args.mode,
-                round=a["round"],
-                seed_used=a["seed_used"],
-                verdict=a["final_verdict"],
-                v_score=a["v_score"],
-                reason_code=a["reason_code"],
-                hint_used=a["hint"],
-                halted_early=a["halted_early"],
-                stopped_at_stop_token=a["stopped_at_stop_token"],
-                test_ok=a["test_ok"],
-                has_undefined=a["has_undefined"],
-                exit_code=a["exit_code"],
-                completion_chars=len(a["completion"]),
-                raw_completion=a["raw_completion"],
-                accepted=a["accepted"],
-                is_final_answer=a["is_final_answer"],
-            ))
-
-        final = attempts[-1]
-        row = prompts_by_name[name]
-        final_path = out_dir / f"{name}__s0.json"
-        final_path.write_text(json.dumps({
-            "name": name,
-            "sample_id": 0,
-            "seed": args.seed,
-            "prompt": final["prompt"],
-            "completion": final["completion"],
-            "raw_completion": final["raw_completion"],
-            "tests": row["tests"],
-            "stop_tokens": final["stop_tokens"],
-            "model": args.model,
-            "quantize": args.quantize,
-            "temperature": args.temperature,
-            "elapsed_sec": final["elapsed_sec"],
-            "language": "elixir",
-            "firewall_mode": args.mode,
-            "firewall_enabled": final["firewall_enabled"],
-            "koumyou_enabled": koumyou_enabled,
-            "trace_seed": TRACE_SEED if koumyou_enabled else "",
-            "total_step_count": final["total_step_count"],
-            "halted_early": final["halted_early"],
-            "stopped_at_stop_token": final["stopped_at_stop_token"],
-            "final_verdict": final["final_verdict"],
-            "final_v_score": final["v_score"],
-            "trace_info": final["trace_info"],
-            # 產屋 REPAIR 追加 field (§5.3)
-            "round": final["round"],
-            "hint": final["hint"],
-            "n_attempts": len(attempts),
-            "repair_reason": final["repair_reason"],
-        }, ensure_ascii=False))
+    # --- fate 確定 (c): max_rounds 消尽してもなお未確定 (= 全 round 失敗のまま)
+    #     の sample を最後にまとめて確定させる (§産屋レビュー Fix 3) ------------
+    for name in attempts_by_name:
+        if name not in resolved:
+            _resolve(name)
 
     summary = build_repair_summary(attempts_by_name, args.max_rounds)
     (out_dir / "_repair_summary.json").write_text(
@@ -703,6 +793,8 @@ def _run_repair_loop(args, rows, decoder, fw_cfg, backbone, tokenizer, out_dir,
 def main():
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+    validate_repair_skip_existing(args)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
