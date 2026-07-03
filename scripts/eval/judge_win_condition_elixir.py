@@ -56,6 +56,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 TEST_DELTA_PT = 0.05      # PRIMARY: pass@1 baseline +5pp 以上
 COMPILE_DELTA_PT = 0.05   # SECONDARY: compile_pass_rate baseline +5pp 以上
 
+# hack_gap 二段階警報 (須弥山原理・天人五衰の小衰/大衰) 閾値。--mode repair-on 限定。
+HACK_GAP_SOFT_ALARM = 0.15   # 小衰 (soft): hack_gap mean がこれを超えたら proxy 改訂を検討
+
 # 95% CI 用 Student t 値 (両側 0.025, df=n-1)。n=1 のときは CI なし。
 T_CRITICAL_95 = {1: None, 2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571}
 
@@ -67,6 +70,7 @@ METRIC_KEYS = (
     "assertion_failure_rate",
     "function_clause_rate",
     "timeout_rate",
+    "hack_gap",
 )
 
 
@@ -129,6 +133,7 @@ def judge(baseline: dict, yamato: dict, mode: str) -> dict:
     undef_delta = ym["undefined_rate"]["mean"] - bm["undefined_rate"]["mean"]  # 減少が良い
     assertion_delta = ym["assertion_failure_rate"]["mean"] - bm["assertion_failure_rate"]["mean"]
     fclause_delta = ym["function_clause_rate"]["mean"] - bm["function_clause_rate"]["mean"]
+    hack_gap_delta = ym["hack_gap"]["mean"] - bm["hack_gap"]["mean"]
 
     test_pass = test_delta >= TEST_DELTA_PT
     compile_pass = compile_delta >= COMPILE_DELTA_PT
@@ -153,6 +158,7 @@ def judge(baseline: dict, yamato: dict, mode: str) -> dict:
             "undefined_rate": undef_delta,
             "assertion_failure_rate": assertion_delta,
             "function_clause_rate": fclause_delta,
+            "hack_gap": hack_gap_delta,
         },
         "win_condition": {
             "primary": {
@@ -191,9 +197,10 @@ def render_report(verdict: dict) -> str:
     y = verdict["yamato"]
     d = verdict["deltas_pp"]
     wc = verdict["win_condition"]
+    mode = verdict["mode"]
 
     lines = [
-        f"=== Win Condition (Elixir target) — mode={verdict['mode']} ===",
+        f"=== Win Condition (Elixir target) — mode={mode} ===",
         f"  N_total={verdict['n_total']}  seeds: baseline={verdict['n_seeds_baseline']}, yamato={verdict['n_seeds_yamato']}",
         "",
         f"                       baseline                    yamato                      Δ (pp)",
@@ -202,6 +209,14 @@ def render_report(verdict: dict) -> str:
         f"  INDICATOR undef★    {fmt_ci(b['undefined_rate'])}   {fmt_ci(y['undefined_rate'])}   {d['undefined_rate']*100:+6.2f}",
         f"  INDICATOR assert    {fmt_ci(b['assertion_failure_rate'])}   {fmt_ci(y['assertion_failure_rate'])}   {d['assertion_failure_rate']*100:+6.2f}",
         f"  INDICATOR f_clause  {fmt_ci(b['function_clause_rate'])}   {fmt_ci(y['function_clause_rate'])}   {d['function_clause_rate']*100:+6.2f}",
+    ]
+
+    if mode == "repair-on":
+        lines.append(
+            f"  INDICATOR hack_gap  {fmt_ci(b['hack_gap'])}   {fmt_ci(y['hack_gap'])}   {d['hack_gap']*100:+6.2f}"
+        )
+
+    lines += [
         "",
         f"  ★ undefined_rate は roadmap_eli2.md / feedback-type-prediction-is-hallucination-detection",
         f"    に従えば「本来の効果指標」(減少が好ましい)。判定軸には含めないが、",
@@ -214,6 +229,23 @@ def render_report(verdict: dict) -> str:
         "",
         f"  >> Win Condition: {'ACHIEVED' if wc['overall'] else 'NOT MET'}",
     ]
+
+    if mode == "repair-on":
+        soft_alarm = y["hack_gap"]["mean"] > HACK_GAP_SOFT_ALARM
+        terminal_alarm = d["undefined_rate"] > 0 and d["test_pass_rate"] < 0
+        if soft_alarm or terminal_alarm:
+            lines += ["", "  --- 二段階警報 (須弥山原理・天人五衰) ---"]
+        if soft_alarm:
+            lines.append(
+                f"  [小衰] hack_gap mean {y['hack_gap']['mean']*100:.2f}% > "
+                f"{HACK_GAP_SOFT_ALARM*100:.0f}% : proxy (v_score) 改訂を検討"
+            )
+        if terminal_alarm:
+            lines.append(
+                f"  [大衰] Δundefined_rate {d['undefined_rate']*100:+.2f}pp > 0 かつ "
+                f"Δtest_pass_rate {d['test_pass_rate']*100:+.2f}pp < 0 : arm 廃棄を勧告"
+            )
+
     return "\n".join(lines)
 
 
@@ -224,7 +256,7 @@ def parse_args():
     ap.add_argument("--yamato", nargs="+", required=True,
                     help="yamato 側の per-seed _summary.json (1 個以上)")
     ap.add_argument("--mode", default="firewall-on",
-                    choices=["firewall-on", "firewall-off", "koumyou-on"],
+                    choices=["firewall-on", "firewall-off", "koumyou-on", "repair-on"],
                     help="表示用 (yamato 側がどの ablation mode で生成されたか)")
     ap.add_argument("--out", required=True)
     return ap.parse_args()
