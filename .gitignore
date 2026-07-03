@@ -52,3 +52,5 @@ analysis/
 *.json
 # baselines/ 配下の judge JSON は手元参照用に温存するためトラッキング対象
 !baselines/*.json
+
+.superpowers
