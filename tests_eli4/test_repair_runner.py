@@ -105,14 +105,122 @@ def test_wrapped_prompt_koumyou_disabled_no_trace_seed(runner):
     )
 
 
+def test_wrapped_prompt_with_real_build_hint_undef_symbol_diff_is_hint_line_only(runner):
+    """如先の担保 (§6.2): 実 build_hint 出力を使った retry でも round 0 との
+    diff は hint_line 1 行のみであること。"""
+    prompt = "defmodule Foo do\n  def bar(x) do\n"
+    round0 = runner.build_wrapped_prompt(prompt, "", True)
+
+    eval_result = {
+        "undef_symbols": ["Enum.fitler/2"],
+        "did_you_mean": ["filter/2"],
+        "reason_code": "undef_symbol",
+    }
+    hint = runner.build_hint(eval_result)
+    assert hint != ""
+
+    retry = runner.build_wrapped_prompt(prompt, hint, True)
+    assert retry != round0
+    assert retry == prompt + runner.build_hint_line(hint) + runner.TRACE_SEED
+
+
+def test_wrapped_prompt_with_real_build_hint_trace_halt_matches_round0(runner):
+    """如先の担保 (§6.2): 光明想 HALT (trace_*) の hint は "" なので、
+    retry の wrapped_prompt は round 0 と byte 一致する。"""
+    prompt = "defmodule Foo do\n  def bar(x) do\n"
+    round0 = runner.build_wrapped_prompt(prompt, "", True)
+
+    eval_result = {"undef_symbols": [], "reason_code": "trace_missing"}
+    hint = runner.build_hint(eval_result)
+    assert hint == ""
+
+    retry = runner.build_wrapped_prompt(prompt, hint, True)
+    assert retry == round0
+
+
 # ---------------------------------------------------------------------------
-# build_hint stub (Step D で処方規則に差し替え予定)
+# build_hint (Step D §6.2 処方規則)
 # ---------------------------------------------------------------------------
 
 
-def test_build_hint_stub_always_empty(runner):
+def test_build_hint_no_undef_no_trace_is_empty(runner):
     assert runner.build_hint({}) == ""
+    # has_undefined はあるが undef_symbols が空 (regex 未マッチ) なら hint なし
     assert runner.build_hint({"reason_code": "undef_symbol", "test_stderr": "boom"}) == ""
+
+
+def test_build_hint_single_undef_symbol_with_dym(runner):
+    eval_result = {
+        "undef_symbols": ["Enum.fitler/2"],
+        "did_you_mean": ["filter/2"],
+        "reason_code": "undef_symbol",
+    }
+    assert runner.build_hint(eval_result) == "Enum.fitler/2 は未定義。候補: filter/2"
+
+
+def test_build_hint_single_undef_symbol_no_dym(runner):
+    eval_result = {
+        "undef_symbols": ["MyModule"],
+        "did_you_mean": [],
+        "reason_code": "undef_symbol",
+    }
+    assert runner.build_hint(eval_result) == "MyModule は未定義"
+
+
+def test_build_hint_dym_capped_at_2(runner):
+    eval_result = {
+        "undef_symbols": ["Enum.fitler/2"],
+        "did_you_mean": ["filter/2", "filter/3", "reject/2"],
+        "reason_code": "undef_symbol",
+    }
+    assert runner.build_hint(eval_result) == "Enum.fitler/2 は未定義。候補: filter/2, filter/3"
+
+
+def test_build_hint_symbols_capped_at_2(runner):
+    eval_result = {
+        "undef_symbols": ["Foo.bar/1", "Baz.qux/2", "Ignored.sym/0"],
+        "did_you_mean": [],
+        "reason_code": "undef_symbol",
+    }
+    hint = runner.build_hint(eval_result)
+    assert "Foo.bar/1" in hint
+    assert "Baz.qux/2" in hint
+    assert "Ignored.sym/0" not in hint
+
+
+def test_build_hint_truncated_to_200_chars(runner):
+    long_sym = "A" * 250 + "/1"
+    eval_result = {"undef_symbols": [long_sym], "did_you_mean": [], "reason_code": "undef_symbol"}
+    hint = runner.build_hint(eval_result)
+    assert len(hint) <= 200
+
+
+def test_build_hint_koumyou_halt_trace_missing_is_empty(runner):
+    eval_result = {"undef_symbols": [], "reason_code": "trace_missing"}
+    assert runner.build_hint(eval_result) == ""
+
+
+def test_build_hint_koumyou_halt_trace_insufficient_is_empty(runner):
+    eval_result = {"undef_symbols": [], "reason_code": "trace_insufficient"}
+    assert runner.build_hint(eval_result) == ""
+
+
+def test_build_hint_other_reasons_are_empty(runner):
+    for reason in ("bracket_mismatch", "do_end_mismatch", "bad_pattern", "low_score", "none"):
+        eval_result = {"undef_symbols": [], "reason_code": reason}
+        assert runner.build_hint(eval_result) == ""
+
+
+def test_build_hint_result_fits_l5_verdict_hint_len_constraint(runner):
+    from kojiki_lm.yomotsu_hirasaka import L5ToL3Verdict, ReasonCode, Verdict
+
+    long_sym = "B" * 250 + "/3"
+    eval_result = {"undef_symbols": [long_sym], "did_you_mean": [], "reason_code": "undef_symbol"}
+    hint = runner.build_hint(eval_result)
+    # L5ToL3Verdict.hint の <=200 制約 (§6.2) を満たす文字列であることを実際に
+    # dataclass 経由で検証する。
+    v = L5ToL3Verdict(verdict=Verdict.HALT, v_score=0.0, reason_code=ReasonCode.NONE, hint=hint)
+    assert len(v.hint) <= 200
 
 
 # ---------------------------------------------------------------------------

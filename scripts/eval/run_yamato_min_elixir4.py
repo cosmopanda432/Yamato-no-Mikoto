@@ -128,16 +128,36 @@ def build_wrapped_prompt(prompt: str, hint: str, koumyou_enabled: bool) -> str:
     return base + TRACE_SEED if koumyou_enabled else base
 
 
+HINT_MAX_CHARS = 200
+HINT_MAX_SYMBOLS = 2
+HINT_MAX_DYM = 2
+
+
 def build_hint(eval_result: dict) -> str:
-    """前 round の評価結果から retry hint 文字列を組み立てる。
+    """前 round の評価結果から retry hint 文字列を組み立てる (產屋 Step D §6.2)。
 
-    Step D (次 task) が処方規則本体を実装する。現時点では常に "" を返す
-    (= repair round は「無 hint 再試行」のみ行う。--temperature 0 (greedy) の
-    場合は §5.3 の `if hint == "" and not do_sample: skip` により実質 retry しない)。
+    | 前 round の失敗                     | hint                                    |
+    |-------------------------------------|------------------------------------------|
+    | undef_symbols 非空                  | `f"{sym} は未定義。候補: {dym[:2]}"` 等   |
+    | 光明想 HALT (trace_missing/insuff.) | "" (再サンプルのみ)                      |
+    | syntax/assertion/timeout/その他     | "" (再サンプルのみ)                      |
 
-    TODO(Step D): 処方規則を実装
+    symbol レベルの hint のみ認可 (project-mechanical-repair-mbpp-go-zero)。
+    最大 `HINT_MAX_SYMBOLS` 個の symbol、全体 `HINT_MAX_CHARS` 字で切る。
     """
-    return ""
+    undef_symbols = eval_result.get("undef_symbols") or []
+    if not undef_symbols:
+        return ""
+
+    dym = eval_result.get("did_you_mean") or []
+    parts = []
+    for sym in undef_symbols[:HINT_MAX_SYMBOLS]:
+        if dym:
+            parts.append(f"{sym} は未定義。候補: {', '.join(dym[:HINT_MAX_DYM])}")
+        else:
+            parts.append(f"{sym} は未定義")
+    hint = "; ".join(parts)
+    return hint[:HINT_MAX_CHARS]
 
 
 def resolve_reason_code(final_verdict, eval_res: dict) -> str:
@@ -411,6 +431,8 @@ def _finish_attempt(*, args, name, round_, hint, repair_reason, prompt, tests,
         "has_undefined": eval_res["has_undefined"],
         "exit_code": eval_res["exit_code"],
         "test_stderr": eval_res["test_stderr"],
+        "undef_symbols": eval_res["undef_symbols"],
+        "did_you_mean": eval_res["did_you_mean"],
         "reason_code": reason_code,
         "accepted": False,
         "is_final_answer": False,
@@ -541,6 +563,8 @@ def _run_repair_loop(args, rows, decoder, fw_cfg, backbone, tokenizer, out_dir,
                 "test_stderr": prev_attempt["test_stderr"],
                 "hint_from_verdict": prev_attempt["hint_from_verdict"],
                 "exit_code": prev_attempt["exit_code"],
+                "undef_symbols": prev_attempt["undef_symbols"],
+                "did_you_mean": prev_attempt["did_you_mean"],
             }
             hint = build_hint(eval_result)
 

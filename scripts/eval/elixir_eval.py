@@ -54,6 +54,71 @@ RE_ASSERTION = re.compile(
 RE_FUNCTION_CLAUSE = re.compile(r"\bFunctionClauseError\b|\bno function clause matching\b")
 RE_MODULE_DEFN = re.compile(r"^\s*defmodule\s+([A-Z][\w\.]*)\s+do", re.MULTILINE)
 
+# undef symbol / did-you-mean 抽出 (產屋 Step D §6.1)。
+#
+# 出発点は roadmap の regex だったが、実 elixir (1.19.5, Erlang/OTP 27, asdf) の
+# 実出力に対して smoke 検証した結果、module-undefined のメッセージ文言が仕様書の
+# 想定 ("module X is not loaded") と異なり "module X is not available" だったため
+# RE_UNDEF_MODULE のみ `loaded|available` の alternation に調整した (他は仕様通り)。
+#
+# 実際の stderr 例 (function undefined):
+#   "    warning: Enum.fitler/2 is undefined or private. Did you mean:\n\n"
+#   "        * filter/2\n\n    ...\n"
+# 実際の stdout 例 (test 実行時、UndefinedFunctionError):
+#   "     ** (UndefinedFunctionError) function Enum.fitler/2 is undefined or"
+#   " private. Did you mean:\n\n         * filter/2\n\n     code: ...\n"
+# 実際の module-undefined 例:
+#   "    warning: NoSuchModule.bar/1 is undefined (module NoSuchModule is not"
+#   " available or is yet to be defined). ...\n"
+RE_UNDEF_FUNC = re.compile(r"function\s+([A-Za-z_][\w\.]*[.][\w!?]+/\d+)\s+is undefined")
+RE_UNDEF_MODULE = re.compile(r"module\s+([A-Za-z_][\w\.]*)\s+is not (?:loaded|available)")
+RE_DYM_BLOCK = re.compile(r"Did you mean:((?:\s*\*\s*[\w\.!?]+/\d+)+)")
+RE_DYM_ITEM = re.compile(r"\*\s*([\w\.!?]+/\d+)")
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def extract_undef_symbols(combined: str) -> list[str]:
+    """`combined` (stderr + stdout) から undefined function / module の
+    symbol 名を抽出する (產屋 Step D §6.1)。重複は順序を保って除去する。"""
+    found = RE_UNDEF_FUNC.findall(combined) + RE_UNDEF_MODULE.findall(combined)
+    return _dedupe_preserve_order(found)
+
+
+def extract_did_you_mean(combined: str) -> list[str]:
+    """`Did you mean:` ブロックから候補 symbol 名を抽出する。重複は順序を保って除去する。"""
+    items: list[str] = []
+    for block in RE_DYM_BLOCK.findall(combined):
+        items.extend(RE_DYM_ITEM.findall(block))
+    return _dedupe_preserve_order(items)
+
+
+def compute_hack_gap(samples: list[dict]) -> float:
+    """不浄観 audit 指標: in-loop proxy (`final_v_score`) が COMMIT (>= 0.7) と
+    判定したのに大地 (subprocess の `test_ok`) が否定した率 (產屋 Step D §6.1)。
+
+    `P(test_ok == False | final_v_score is not None and final_v_score >= 0.7)`。
+    分母 (final_v_score >= 0.7 の件数) が 0 のときは 0.0 を返す。
+    """
+    denom = 0
+    numer = 0
+    for s in samples:
+        v = s.get("final_v_score")
+        if v is None or v < 0.7:
+            continue
+        denom += 1
+        if not s.get("test_ok"):
+            numer += 1
+    return (numer / denom) if denom else 0.0
+
 
 def parse_args():
     ap = argparse.ArgumentParser()
@@ -111,6 +176,11 @@ def run_one(
         "exit_code": None,
         "elapsed_sec": 0.0,
         "timed_out": False,
+        # 產屋 Step D 追加 field (§6.1, additive only)
+        "undef_symbols": [],
+        "did_you_mean": [],
+        "final_v_score": sample.get("final_v_score"),
+        "final_verdict": sample.get("final_verdict"),
     }
 
     body = prompt + completion
@@ -134,6 +204,11 @@ def run_one(
             )
             combined = (proc.stderr or "") + "\n" + (proc.stdout or "")
             result["exit_code"] = proc.returncode
+
+            # combined を trim する前に構造化抽出 (產屋 Step D §6.1)
+            result["undef_symbols"] = extract_undef_symbols(combined)
+            result["did_you_mean"] = extract_did_you_mean(combined)
+
             result["test_stderr"] = _trim(combined)
 
             # 各エラーパターンを並行検出 (1 サンプルが複数該当する可能性あり)
@@ -247,6 +322,8 @@ def main():
         "elapsed_total_sec": elapsed,
         "generated_dir": str(gen_dir),
         "elixir_bin": elixir_bin,
+        # 產屋 Step D 追加 key (§6.1, additive only)
+        "hack_gap": compute_hack_gap(per_sample),
     }
     (out_dir / "_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
 
