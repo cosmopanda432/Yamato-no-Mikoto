@@ -138,6 +138,27 @@ def test_wrapped_prompt_with_real_build_hint_trace_halt_matches_round0(runner):
     assert retry == round0
 
 
+def test_wrapped_prompt_trace_halt_with_undef_symbols_still_matches_round0(runner):
+    """如先の担保 (§6.2、reviewer 指摘の衝突経路): post-hoc eval が halted_early な
+    attempt に対しても走り、たまたま undef_symbols が非空になったとしても、
+    reason_code が trace_missing/trace_insufficient なら hint なしのまま
+    (undef_symbols チェックより trace_* 判定が優先される)。"""
+    prompt = "defmodule Foo do\n  def bar(x) do\n"
+    round0 = runner.build_wrapped_prompt(prompt, "", True)
+
+    for reason in ("trace_missing", "trace_insufficient"):
+        eval_result = {
+            "undef_symbols": ["Enum.fitler/2"],
+            "did_you_mean": ["filter/2"],
+            "reason_code": reason,
+        }
+        hint = runner.build_hint(eval_result)
+        assert hint == ""
+
+        retry = runner.build_wrapped_prompt(prompt, hint, True)
+        assert retry == round0
+
+
 # ---------------------------------------------------------------------------
 # build_hint (Step D §6.2 処方規則)
 # ---------------------------------------------------------------------------
@@ -202,6 +223,28 @@ def test_build_hint_koumyou_halt_trace_missing_is_empty(runner):
 
 def test_build_hint_koumyou_halt_trace_insufficient_is_empty(runner):
     eval_result = {"undef_symbols": [], "reason_code": "trace_insufficient"}
+    assert runner.build_hint(eval_result) == ""
+
+
+def test_build_hint_trace_missing_wins_over_undef_symbols(runner):
+    """reason_code (resolve_reason_code の優先順位1) は trace_missing/insufficient
+    のとき undef_symbols より優先される (§6.2)。post-hoc eval が halted_early な
+    attempt に対しても走るため、部分コードがたまたま undef_symbols を生む
+    ケースがあり得るが、それでも hint なしになるべき (reviewer 指摘)。"""
+    eval_result = {
+        "undef_symbols": ["Enum.fitler/2"],
+        "did_you_mean": ["filter/2"],
+        "reason_code": "trace_missing",
+    }
+    assert runner.build_hint(eval_result) == ""
+
+
+def test_build_hint_trace_insufficient_wins_over_undef_symbols(runner):
+    eval_result = {
+        "undef_symbols": ["Enum.fitler/2"],
+        "did_you_mean": ["filter/2"],
+        "reason_code": "trace_insufficient",
+    }
     assert runner.build_hint(eval_result) == ""
 
 

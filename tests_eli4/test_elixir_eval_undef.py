@@ -97,6 +97,35 @@ def test_extract_undef_module_from_real_stderr_fixture(ee):
     assert "NoSuchModule" in undef_symbols
 
 
+# 実 elixir 1.19.5 で `Enum.memberr?/2` (`?` 付き関数名) を実行して得た実際の
+# combined 全文 (brief §6.1 が明示的に "Elixir の関数名は `?` `!` を含み得る" と
+# 検証必須事項として挙げているケース)。
+_REAL_COMBINED_UNDEF_FUNC_WITH_QUESTION_MARK = (
+    "    warning: Enum.memberr?/2 is undefined or private. Did you mean:\n\n"
+    "        * member?/2\n\n"
+    "    │\n"
+    "  3 │     Enum.memberr?(xs, 1)\n"
+    "    │          ~\n"
+    "    │\n"
+    "    └─ /tmp/undef_bang_q.exs:3:10: Sample.foo/1\n"
+    "\n"
+    "  1) test foo (SampleTest)\n"
+    "     ** (UndefinedFunctionError) function Enum.memberr?/2 is undefined or"
+    " private. Did you mean:\n\n"
+    "         * member?/2\n\n"
+    "     code: assert Sample.foo([1, 2, 3]) == true\n"
+)
+
+
+def test_extract_undef_func_and_dym_with_question_mark_symbol(ee):
+    combined = _REAL_COMBINED_UNDEF_FUNC_WITH_QUESTION_MARK
+    undef_symbols = ee.extract_undef_symbols(combined)
+    dym = ee.extract_did_you_mean(combined)
+
+    assert "Enum.memberr?/2" in undef_symbols
+    assert dym == ["member?/2"]
+
+
 def test_extract_undef_symbols_empty_when_no_error(ee):
     assert ee.extract_undef_symbols("all good, 1 test, 0 failures") == []
     assert ee.extract_did_you_mean("all good, 1 test, 0 failures") == []

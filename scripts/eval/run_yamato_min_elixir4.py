@@ -132,19 +132,30 @@ HINT_MAX_CHARS = 200
 HINT_MAX_SYMBOLS = 2
 HINT_MAX_DYM = 2
 
+# 光明想 (KoumyouSo) HALT の reason_code (resolve_reason_code の優先順位1と同一の
+# 分類)。§6.2: 「光明想 HALT (trace_*) → hint なし (再サンプルのみ)」。
+# post-hoc eval (elixir_eval.run_one) は halted_early な attempt に対しても
+# 常に実行されるため、たまたま部分コードが undef_symbols を生む可能性がある —
+# この場合でも trace_* が最優先で hint なしになるよう、undef_symbols チェックより
+# 前に判定する。
+_TRACE_HALT_REASON_CODES = {"trace_missing", "trace_insufficient"}
+
 
 def build_hint(eval_result: dict) -> str:
     """前 round の評価結果から retry hint 文字列を組み立てる (產屋 Step D §6.2)。
 
     | 前 round の失敗                     | hint                                    |
     |-------------------------------------|------------------------------------------|
+    | 光明想 HALT (trace_missing/insuff.) | "" (再サンプルのみ、undef_symbols より優先) |
     | undef_symbols 非空                  | `f"{sym} は未定義。候補: {dym[:2]}"` 等   |
-    | 光明想 HALT (trace_missing/insuff.) | "" (再サンプルのみ)                      |
     | syntax/assertion/timeout/その他     | "" (再サンプルのみ)                      |
 
     symbol レベルの hint のみ認可 (project-mechanical-repair-mbpp-go-zero)。
     最大 `HINT_MAX_SYMBOLS` 個の symbol、全体 `HINT_MAX_CHARS` 字で切る。
     """
+    if eval_result.get("reason_code") in _TRACE_HALT_REASON_CODES:
+        return ""
+
     undef_symbols = eval_result.get("undef_symbols") or []
     if not undef_symbols:
         return ""
