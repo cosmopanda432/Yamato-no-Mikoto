@@ -181,7 +181,15 @@ judge_mode() {
     local base_summaries=()
     local yam_summaries=()
     for s in "${seeds[@]}"; do
-        local bs="data/eval/results/${DATASET}.baseline.seed${s}/_summary.json"
+        # repair-on の収支判定は vanilla baseline ではなく koumyou-on を基準にする
+        # (repair loop の marginal effect を測るため。設計書 §7-5/§10)。
+        # koumyou-on は MODES 内で repair-on より先に走るのでファイルは既に揃っている。
+        local bs
+        if [[ "$mode" == "repair-on" ]]; then
+            bs="data/eval/results/${DATASET}.yamato_min_elixir4.koumyou-on.seed${s}/_summary.json"
+        else
+            bs="data/eval/results/${DATASET}.baseline.seed${s}/_summary.json"
+        fi
         local ys="data/eval/results/${DATASET}.yamato_min_elixir4.${mode}.seed${s}/_summary.json"
         if [[ ! -s "$bs" ]]; then err "missing baseline summary: $bs"; return 1; fi
         if [[ ! -s "$ys" ]]; then err "missing yamato4 summary: $ys"; return 1; fi
