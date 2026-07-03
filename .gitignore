@@ -3,7 +3,7 @@ checkpoints/**/*.pt
 checkpoints/**/*.bin
 checkpoints/**/*.safetensors
 models/
-data/
+
 
 # Python
 __pycache__/
