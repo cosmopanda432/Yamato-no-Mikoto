@@ -33,8 +33,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .koumyou_so import KoumyouSo
-from .yomotsu_hirasaka import L3ToL5Payload, L5ToL3Verdict, Verdict
+from .koumyou_so import KoumyouSo, TraceStatus
+from .yomotsu_hirasaka import L3ToL5Payload, L5ToL3Verdict, ReasonCode, Verdict
 
 
 # Elixir で「正しい Elixir 構文に向かっている」キーワード (加点対象)。
@@ -110,6 +110,12 @@ class ElixirEvaluator:
         # 光明想 (None なら ablation 対照 = eli2 と同等動作)
         self.koumyou_so = koumyou_so
 
+    # 光明想 terminal failure → reason_code の対応表 (事戸拡張、優先順位 1)
+    _TRACE_STATUS_TO_REASON = {
+        TraceStatus.TRACE_MISSING: ReasonCode.TRACE_MISSING,
+        TraceStatus.TRACE_INSUFFICIENT: ReasonCode.TRACE_INSUFFICIENT,
+    }
+
     def __call__(self, payload: L3ToL5Payload) -> L5ToL3Verdict:
         # 1. 光明想チェック (有効時のみ): trace 不在/不足は v_score 計算より先に HALT。
         # 「闇 (中間推論の不在) を照明で破る」原理 — gameable な scoring に
@@ -119,17 +125,52 @@ class ElixirEvaluator:
             generated_text = payload.text[payload.prompt_len:]
             trace = self.koumyou_so.validate(generated_text)
             if trace.is_terminal_failure:
-                return L5ToL3Verdict(verdict=Verdict.HALT, v_score=0.0)
+                reason_code = self._TRACE_STATUS_TO_REASON[trace.status]
+                return L5ToL3Verdict(
+                    verdict=Verdict.HALT, v_score=0.0, reason_code=reason_code
+                )
 
-        v_score = self._compute_v_score(payload.text)
+        v_score, flags = self._compute_score_and_flags(payload.text)
         verdict = self._decide(v_score)
-        return L5ToL3Verdict(verdict=verdict, v_score=v_score)
+
+        # 3. reason_code 判定 (事戸拡張、優先順位 2-3):
+        #   COMMIT → NONE。それ以外は検出済みフラグを
+        #   BRACKET_MISMATCH > DO_END_MISMATCH > BAD_PATTERN > LOW_SCORE の
+        #   優先順位で 1 つ選ぶ。
+        if verdict == Verdict.COMMIT:
+            reason_code = ReasonCode.NONE
+        elif flags["bracket_mismatch"]:
+            reason_code = ReasonCode.BRACKET_MISMATCH
+        elif flags["do_end_mismatch"]:
+            reason_code = ReasonCode.DO_END_MISMATCH
+        elif flags["bad_pattern"]:
+            reason_code = ReasonCode.BAD_PATTERN
+        else:
+            reason_code = ReasonCode.LOW_SCORE
+
+        return L5ToL3Verdict(verdict=verdict, v_score=v_score, reason_code=reason_code)
 
     def _compute_v_score(self, text: str) -> float:
+        """後方互換のための薄いラッパー。数値計算は `_compute_score_and_flags` に一本化。"""
+        score, _flags = self._compute_score_and_flags(text)
+        return score
+
+    def _compute_score_and_flags(self, text: str) -> tuple[float, dict[str, bool]]:
+        """v_score と、事戸拡張の reason_code 判定に使う検出フラグを同時に返す。
+
+        **数値計算 (score の加減算・順序) は eli3 の `_compute_v_score` と 1 bit も
+        変えていない** — 各 if 節で既に判定している bool をそのまま流用しているだけ。
+        """
+        flags = {
+            "bracket_mismatch": False,
+            "do_end_mismatch": False,
+            "bad_pattern": False,
+        }
+
         if not text:
-            return 0.0
+            return 0.0, flags
         if len(text) < self.config.min_text_length:
-            return 0.1
+            return 0.1, flags
 
         score = 0.5
 
@@ -140,14 +181,17 @@ class ElixirEvaluator:
         for pat in _ELIXIR_BAD_PATTERNS:
             if pat in text:
                 score -= self.config.bad_pattern_penalty
+                flags["bad_pattern"] = True
 
         if not self._brackets_balanced(text):
             score -= self.config.bracket_mismatch_penalty
+            flags["bracket_mismatch"] = True
 
         if not self._do_end_balanced(text):
             score -= self.config.do_end_mismatch_penalty
+            flags["do_end_mismatch"] = True
 
-        return max(0.0, min(1.0, score))
+        return max(0.0, min(1.0, score)), flags
 
     @staticmethod
     def _brackets_balanced(text: str) -> bool:

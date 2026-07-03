@@ -31,6 +31,25 @@ class Verdict(Enum):
     HALT = "halt"
 
 
+class ReasonCode(Enum):
+    """事戸 (kotodo) 拡張 — L5 → L3 の verdict に付与する機械可読な棄却理由。
+
+    in-loop evaluator (ElixirEvaluator) が設定するのは NONE / TRACE_MISSING /
+    TRACE_INSUFFICIENT / BRACKET_MISMATCH / DO_END_MISMATCH / BAD_PATTERN /
+    LOW_SCORE のみ。UNDEF_SYMBOL は post-hoc (subprocess 実行後) 専用で、
+    in-loop evaluator からは絶対に発行しない。
+    """
+
+    NONE = "none"
+    TRACE_MISSING = "trace_missing"
+    TRACE_INSUFFICIENT = "trace_insufficient"
+    BRACKET_MISMATCH = "bracket_mismatch"
+    DO_END_MISMATCH = "do_end_mismatch"
+    BAD_PATTERN = "bad_pattern"
+    LOW_SCORE = "low_score"
+    UNDEF_SYMBOL = "undef_symbol"  # post-hoc 専用 (in-loop evaluator は使わない)
+
+
 @dataclass(frozen=True)
 class L3ToL5Payload:
     """葦原 → 黄泉: text と最小メタのみ。tensor 等は受け付けない。
@@ -80,9 +99,17 @@ class L3ToL5Payload:
 
 @dataclass(frozen=True)
 class L5ToL3Verdict:
-    """黄泉 → 葦原: verdict と v_score のみ。それ以外の評価器内部状態は持たせない"""
+    """黄泉 → 葦原: verdict と v_score のみ。それ以外の評価器内部状態は持たせない
+
+    eli4 (事戸拡張) で `reason_code` / `hint` を追加 (default 付きで後方互換)。
+    orchestrator (産屋 REPAIR loop) が retry hint を組み立てるための機械可読情報。
+    """
     verdict: Verdict
     v_score: float
+    reason_code: ReasonCode = ReasonCode.NONE
+    hint: str = ""
+    """最大 200 文字。retry 時のヒント文字列 (プロンプト差分は作らない — 呼び出し側の
+    判断材料に留める)。"""
 
     def __post_init__(self) -> None:
         if not isinstance(self.verdict, Verdict):
@@ -98,6 +125,19 @@ class L5ToL3Verdict:
         if not (0.0 <= float(self.v_score) <= 1.0):
             raise ValueError(
                 f"L5ToL3Verdict.v_score must be in [0.0, 1.0], got {self.v_score}"
+            )
+        if not isinstance(self.reason_code, ReasonCode):
+            raise TypeError(
+                f"L5ToL3Verdict.reason_code must be ReasonCode enum, "
+                f"got {type(self.reason_code).__name__}"
+            )
+        if not isinstance(self.hint, str):
+            raise TypeError(
+                f"L5ToL3Verdict.hint must be str, got {type(self.hint).__name__}"
+            )
+        if len(self.hint) > 200:
+            raise ValueError(
+                f"L5ToL3Verdict.hint must be <= 200 chars, got {len(self.hint)}"
             )
 
 
