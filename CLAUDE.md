@@ -32,14 +32,18 @@ target folder to `sys.path` before importing `kojiki_lm`.
 ```bash
 pytest tests/                 # src_min/ (TypeScript-target variant) — CPU only, no GPU needed
 pytest tests_go/              # src_min_go/ (Go-target variant)
+pytest tests_eli4/            # src_min_eli4/ (Elixir target, 產屋 REPAIR variant)
+pytest tests_ts4/             # src_min_ts4/ (TypeScript target, eli4 同型スタック移植)
 pytest tests/test_firewall.py::TestL3ToL5Payload::test_valid_payload   # single test
 ```
 
-**Do not run `pytest tests/ tests_go/` together** (and do not point a single `pytest` invocation at
-the repo root). Both suites import the same top-level module name `kojiki_lm` from different
-directories (`src_min/` vs `src_min_go/` via manual `sys.path` insertion); whichever gets imported
-first wins for the rest of the process, and the other suite's imports break. Run each test directory
-in its own `pytest` invocation.
+**Do not run any two of `tests/` / `tests_go/` / `tests_eli4/` / `tests_ts4/` together** (and do
+not point a single `pytest` invocation at the repo root). All these suites import the same
+top-level module name `kojiki_lm` from different directories (`src_min/` / `src_min_go/` /
+`src_min_eli4/` / `src_min_ts4/` via manual `sys.path` insertion); whichever gets imported first
+wins for the rest of the process, and the other suites' imports break. Run each test directory in
+its own `pytest` invocation. `tests_ts4/test_ts_eval.py` additionally shells out to a real
+`tsc`/`node` (via `ts_tools/`, `npm ci`'d separately) rather than mocking them.
 
 `src_min_eli2/` and `src_min_eli3/` have no unit test suites — they're validated via the eval
 scripts below (ablation runs against MultiPL-E-style benchmarks), not pytest.
@@ -112,6 +116,8 @@ it physically harder for the model to skip reasoning and jump straight to code. 
 | `src_min_go/` | Go | active; has symbol oracle in `src_min_go/go_tools/` (Go binary, `go.mod`) |
 | `src_min_eli2/` | Elixir | active; firewall only, kotodama masking dropped |
 | `src_min_eli3/` | Elixir | active; eli2 + KoumyouSo reasoning-trace enforcement |
+| `src_min_eli4/` | Elixir | active; eli3 + 產屋 (REPAIR) round-based regeneration loop (`--mode repair-on`) |
+| `src_min_ts4/` | TypeScript | active; eli4 同型スタックの TS 移植 (firewall + KoumyouSo + REPAIR, `// 思考:` marker); only variant besides `src_min/` with a real `tsc`/`node` toolchain (`ts_tools/`) |
 | `src_min_elixir/` | Elixir (BEAM-native) | **archived** — Bumblebee lacks Qwen2/Qwen3 MoE support, blocked at model-load step |
 | `src/` | — | frozen reference copy of the original (pre-`src_min`) full implementation; read-only |
 | `source_reference/` | — | ~13,500 LOC read-only reference implementation, consulted but not imported |
