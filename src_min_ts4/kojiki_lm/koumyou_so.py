@@ -5,7 +5,7 @@
 「光明想」= 光を観想すること、つまり「闇 (出力の不透明性) を照明 (中間推論の可視化) で
 破る」というもの。
 
-役割: 出力テキストが `# 思考: ...` で始まる reasoning trace を持つことを強制する。
+役割: 出力テキストが `// 思考: ...` で始まる reasoning trace を持つことを強制する。
 trace 不在 = 惛沈睡眠 (model が思考過程を見せずに code に直行) → HALT 信号を生成。
 
 設計原則 (docs/memo/2026-05-26_須弥山設計原理.md Part 2 §6 より):
@@ -14,13 +14,13 @@ trace 不在 = 惛沈睡眠 (model が思考過程を見せずに code に直行
   - 「閻魔の浄玻璃鏡」原理 (改竄不能性) に従い、決定論的 regex / カウントベース
 
 trace format (本実装で強制する形式):
-    # 思考: <content line 1>
-    # 思考: <content line 2>
+    // 思考: <content line 1>
+    // 思考: <content line 2>
     ...
-    <code (Elixir 関数本体 or `def`/`defmodule` 等)>
+    <code (TypeScript 関数本体 or `function`/`const` 等)>
 
 判定ルール:
-  - 生成テキストの **先頭から連続する** 「空白行 or `# 思考:` 行」を trace prefix と
+  - 生成テキストの **先頭から連続する** 「空白行 or `// 思考:` 行」を trace prefix と
     みなす。
   - 最初に出現する「trace でも空白でもない行」を「code 開始」と判定する。
   - code 開始時点で trace 行数 ≥ min_trace_lines かつ trace 本文文字数 ≥ min_trace_chars
@@ -34,7 +34,7 @@ trace format (本実装で強制する形式):
     TRACE_INSUFFICIENT: code 開始済 + trace は存在するが不足
     TRACE_MISSING:      code 開始済 + trace marker が皆無 (最悪)
 
-呼び出し側 (`elixir_evaluator.py`) は TRACE_INSUFFICIENT / TRACE_MISSING を
+呼び出し側 (`ts_evaluator.py`) は TRACE_INSUFFICIENT / TRACE_MISSING を
 v_score = 0.0 + HALT に直接マッピングする。
 """
 
@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-THOUGHT_MARKER = "# 思考:"
+THOUGHT_MARKER = "// 思考:"
 
 
 class TraceStatus(Enum):
@@ -60,7 +60,7 @@ class KoumyouSoConfig:
     """光明想の閾値設定。"""
 
     min_trace_lines: int = 1
-    """`# 思考:` 行が最低この本数なければ INSUFFICIENT。
+    """`// 思考:` 行が最低この本数なければ INSUFFICIENT。
 
     Note (2026-05-26 smoke 知見): Qwen2.5-Coder-Instruct は「1 行に comma 区切りで
     全 step を詰める」スタイル (e.g. `1. ..., 2. ..., 3. ...`) を好む。bare prompt
@@ -71,7 +71,7 @@ class KoumyouSoConfig:
 
     min_trace_chars: int = 20
     """trace の中身 (marker を除いた本文) の合計文字数の下限。
-    無意味な padding (e.g. `# 思考: a`) で gaming するのを防ぐ。
+    無意味な padding (e.g. `// 思考: a`) で gaming するのを防ぐ。
     1 行 trace でも substance を担保する主要 gate (上記 min_trace_lines の制約緩和
     に伴い、こちらが事実上の主軸チェックになる)。
     """
@@ -82,7 +82,7 @@ class KoumyouSoConfig:
     """
 
     trace_seed: str = ""
-    """prompt 末尾に pre-seed された trace prefix (e.g. `"  # 思考: "`)。
+    """prompt 末尾に pre-seed された trace prefix (e.g. `"  // 思考: "`)。
     runner が prompt 末尾に注入した場合、generated_text はその「続き」から始まる
     ので、validate 時に trace_seed を prepend して整合させる。
     空文字列なら無効 (生成テキスト全体を validator が見る)。
@@ -139,7 +139,7 @@ class KoumyouSo:
                 code_started=False,
             )
 
-        # runner が prompt 末尾に trace_seed (e.g. `"  # 思考: "`) を pre-seed して
+        # runner が prompt 末尾に trace_seed (e.g. `"  // 思考: "`) を pre-seed して
         # いる場合、generated_text はその「続き」から始まる。validator から見ると
         # 1 行目の先頭に marker が無いように見えるので、prepend して整合させる。
         if cfg.trace_seed:
@@ -153,7 +153,7 @@ class KoumyouSo:
 
         # 生成テキストの先頭から1行ずつ走査:
         #   - 空白行 → スキップ (trace の前後の余白を許容)
-        #   - `# 思考:` 行 → trace としてカウント
+        #   - `// 思考:` 行 → trace としてカウント
         #   - それ以外 → code 開始としてループ離脱
         for raw_line in text_to_scan.split("\n"):
             stripped = raw_line.strip()
