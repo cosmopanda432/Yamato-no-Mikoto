@@ -54,3 +54,22 @@ prompt はキーワードの塊なので、生成部分が空でもスコアが 
 - `src_min/` `src_min_go/` `src_min_eli2/` `src_min_eli3/` `src_min_eli4/` の変更 (import は可)。
 - 閾値 0.7/0.3・スコア骨格の無断変更 (変えるなら Phase A の数値を根拠にレポートで提案)。
 - GPU を要する実行 (再検証は次回 pod で ts4 pilot として実施)。
+
+## Phase A 判定 (2026-07-17 追記) — 不採用、Phase B は中止
+
+オフライン再採点 (`scripts/analysis/replay_vscore_slice.py`、全数表は
+`docs/memo/2026-07-17_vscore_slice再採点.md`) の結果:
+
+- **インフレ仮説は実証**: prompt 単体で median 0.75、**96.89% が commit 閾値 0.7 を単体で超える**。
+  現行の hack_gap はベース失敗率とほぼ一致 = v_score は無情報。
+- **しかし slice は救済にならない**: 閾値据え置きで COMMIT 圏が 161 件中 1〜5 件に崩壊。
+  閾値 sweep (0.40〜0.70) 全域でも hack_gap 40〜83% / halt 側は 0.35 で早くも test_ok
+  取りこぼし 11.9%。原因は閾値ではなく**キーワード加点という骨格自体に識別力が無い**こと
+  (gate 通過 sample 限定 AUC 0.40〜0.41 = chance 未満)。
+- 判定: 採用基準 ①hack_gap 半減 不成立 (分母崩壊による見かけの低下のみ)。
+  **`score_generated_only` flag の ts4 実装も見送り** (default False の flag は死にコード、YAGNI)。
+- 後続提案 (別プロジェクトとして): v_score の再設計は「加点系 → 構造 check 中心」への骨格変更が
+  必要条件。replay harness が整備されたので、候補スコアラーは GPU なしで offline AUC 評価できる。
+- 副次発見 2 件 (ts4 にも同種リスク、次回 pod で tokenizer 検証可能):
+  ① 16-token 刻み check 境界で `# 思考:` marker 生成途中を code と誤判定して誤 HALT (6件)、
+  ② 中国語 trace の per-token decode "�" による光明想 gate すり抜け COMMIT (4件)。
