@@ -91,6 +91,41 @@ def test_wrapped_prompt_with_hint_diff_is_hint_line_only(runner):
     assert with_hint == prompt + inserted + runner.TRACE_SEED
 
 
+def test_hint_line_sanitizes_newlines(runner):
+    """QA 指摘: hint 内に \\n/\\r が混入していても build_hint_line の出力は 1 行
+    (末尾の \\n 1 個のみ) に正規化される。"""
+    hint_with_newlines = "line1\nline2\r\nline3"
+    line = runner.build_hint_line(hint_with_newlines)
+
+    assert line.count("\n") == 1
+    assert line.endswith("\n")
+    assert "\r" not in line
+    assert "line1" in line
+    assert "line2" in line
+    assert "line3" in line
+    # 中身の改行はすべて space に置換されている (連結された1本の文になる)
+    assert "line1 line2 line3" in line
+
+
+def test_wrapped_prompt_diff_is_one_line_even_with_newline_hint(runner):
+    """注入境界の防御 (QA 指摘): 改行入り hint を渡しても build_wrapped_prompt の
+    round 0 との diff は依然として hint 行 1 行だけ (one-line-diff 不変条件)。"""
+    prompt = "function foo(x: number): number {\n"
+    round0 = runner.build_wrapped_prompt(prompt, "", True)
+
+    hint_with_newlines = "foo\nbar\r\nbaz"
+    wrapped = runner.build_wrapped_prompt(prompt, hint_with_newlines, True)
+
+    assert wrapped != round0
+    assert wrapped.startswith(prompt)
+    assert wrapped.endswith(runner.TRACE_SEED)
+
+    inserted = wrapped[len(prompt): len(wrapped) - len(runner.TRACE_SEED)]
+    assert inserted == runner.build_hint_line(hint_with_newlines)
+    assert inserted.count("\n") == 1
+    assert wrapped == prompt + inserted + runner.TRACE_SEED
+
+
 def test_wrapped_prompt_koumyou_disabled_no_trace_seed(runner):
     prompt = "function foo(): void {\n"
     assert runner.build_wrapped_prompt(prompt, "", False) == prompt

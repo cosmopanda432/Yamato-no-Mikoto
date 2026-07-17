@@ -29,6 +29,10 @@ Elixir 版との違い:
     TS には対応する単一の文字列規約が無い。tsc の compile が通ったのに node の実行が非 0
     exit で終わった場合を「assertion/runtime failure」とみなす (best-effort、eli4 と同水準の
     割り切り)。
+  - `run_one` の `source` は `prompt + completion + tests` の連結を丸ごと 1 ファイルとして
+    compile する (Elixir 版と同じ方式)。そのため `has_undefined` は completion 由来の未定義
+    シンボルだけでなく、テストハーネス (`tests` 文字列) 側だけが参照する未定義シンボルにも
+    等しく反応する best-effort な判定である (eli4 の Elixir 版が抱える同じ制限を継承)。
 
 使い方:
     python3 scripts/eval/ts_eval.py \\
@@ -98,6 +102,17 @@ def classify_diagnostics(tsc_stdout: str) -> dict:
             has_type_error = True
             if not first_type_error_msg:
                 first_type_error_msg = msg
+
+    # syntax_error と type_error は互いに排他的な分類にする (QA 指摘、clean partition)。
+    # 構文破壊ファイルでは TS1xxx 診断の周辺に連鎖的な TS2xxx (e.g. パーサが recovery
+    # した結果の "function implementation is missing" 等) が同時に出ることがあり、
+    # そのまま両方 True にすると summary の type_error_rate が syntax 失敗を二重計上
+    # してしまう。has_syntax_error が立っていれば has_type_error は常に False に倒す
+    # (syntax_error 優先)。undefined と type_error / undefined と syntax_error の共存は
+    # 既存のまま変えない (undef 優先の判定は build_hint/resolve_reason_code 側で担保)。
+    if has_syntax_error:
+        has_type_error = False
+        first_type_error_msg = ""
 
     return {
         "has_undefined": has_undefined,

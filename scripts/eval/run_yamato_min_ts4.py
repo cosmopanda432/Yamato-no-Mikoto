@@ -113,8 +113,17 @@ def attempt_seed(base_seed: int, i: int, r: int) -> int:
 
 
 def build_hint_line(hint: str) -> str:
-    """hint 文字列から prompt に挿入する 1 行を組み立てる。hint == "" なら空文字列。"""
-    return f"  // ヒント: {hint}\n" if hint else ""
+    """hint 文字列から prompt に挿入する 1 行を組み立てる。hint == "" なら空文字列。
+
+    hint 内に `\\n`/`\\r` が混入していても (e.g. tsc の複数行にまたがる診断メッセージや
+    `undef_symbols` の join 結果に由来) 出力が複数行に分裂して如先の one-line-diff
+    不変条件 (round 0 との差分は挿入行 1 行のみ) を壊さないよう、注入境界でここに
+    space へ正規化する (QA 指摘、防御的境界)。
+    """
+    if not hint:
+        return ""
+    sanitized = hint.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+    return f"  // ヒント: {sanitized}\n"
 
 
 def build_wrapped_prompt(prompt: str, hint: str, koumyou_enabled: bool) -> str:

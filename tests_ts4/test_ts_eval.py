@@ -125,6 +125,47 @@ def test_classify_diagnostics_ts7xxx_is_type_error():
     assert d["has_type_error"] is True
 
 
+def test_classify_diagnostics_syntax_and_type_coexist_is_gated_to_syntax_only():
+    """QA 指摘: 構文破壊ファイルで TS1005 (syntax) と TS2xxx (type、パーサ recovery の
+    連鎖) が同一診断出力に混在しても、has_type_error は has_syntax_error に負けて False
+    になる (clean partition、type_error_rate の二重計上を防ぐ)。実 tsc がこのパターンを
+    出す例は下記コメントの通り (syntax.ts への `function foo(x: number { ... }` 相当)。"""
+    stdout = (
+        "syntax.ts(1,14): error TS2300: Duplicate identifier 'x'.\n"
+        "syntax.ts(1,24): error TS1005: ',' expected.\n"
+        "syntax.ts(2,10): error TS1005: ':' expected.\n"
+        "syntax.ts(2,10): error TS2300: Duplicate identifier 'x'.\n"
+        "syntax.ts(2,10): error TS2842: 'x' is an unused renaming of 'return'.\n"
+        "syntax.ts(2,12): error TS1005: ',' expected.\n"
+        "syntax.ts(3,1): error TS1128: Declaration or statement expected.\n"
+    )
+    d = ts_eval.classify_diagnostics(stdout)
+    assert d["has_syntax_error"] is True
+    assert d["has_type_error"] is False
+    assert d["first_type_error_msg"] == ""
+
+
+def test_classify_diagnostics_undefined_and_type_error_still_coexist():
+    """undefined と type_error の共存は既存のまま変えない (QA 指摘は syntax/type のみ対象)。"""
+    stdout = (
+        "a.ts(1,1): error TS2304: Cannot find name 'bar'.\n"
+        "a.ts(2,3): error TS2322: Type 'number' is not assignable to type 'string'.\n"
+    )
+    d = ts_eval.classify_diagnostics(stdout)
+    assert d["has_undefined"] is True
+    assert d["has_type_error"] is True
+
+
+def test_classify_diagnostics_undefined_and_syntax_error_still_coexist():
+    stdout = (
+        "a.ts(1,1): error TS2304: Cannot find name 'bar'.\n"
+        "a.ts(2,3): error TS1005: ',' expected.\n"
+    )
+    d = ts_eval.classify_diagnostics(stdout)
+    assert d["has_undefined"] is True
+    assert d["has_syntax_error"] is True
+
+
 # ---------------------------------------------------------------------------
 # run_one — 実 tsc + node を使う 5 ケース
 # ---------------------------------------------------------------------------
@@ -204,6 +245,29 @@ def test_run_one_timeout(tsc_bin, node_bin):
     assert r["timed_out"] is True
     assert r["test_ok"] is False
     assert r["exit_code"] == -1
+
+
+def test_run_one_generic_exception_sets_exit_code_minus_2(tsc_bin, node_bin, monkeypatch):
+    """QA 指摘: run_one:277-279 の `except Exception` 分岐 (subprocess.run が
+    TimeoutExpired 以外の例外 — 例えば OSError — を raise した場合) のカバー。"""
+
+    def _raise_oserror(*args, **kwargs):
+        raise OSError("boom: executable not runnable")
+
+    monkeypatch.setattr(ts_eval.subprocess, "run", _raise_oserror)
+
+    sample = _sample(
+        "t_exc",
+        "function foo(): number {\n",
+        "  return 1;\n}\n",
+        "console.log(foo());\n",
+    )
+    r = ts_eval.run_one(sample, tsc_bin, node_bin, timeout=10.0)
+    assert r["exit_code"] == -2
+    assert r["test_stderr"].startswith("exception:")
+    assert "boom" in r["test_stderr"]
+    assert r["test_ok"] is False
+    assert r["timed_out"] is False
 
 
 # ---------------------------------------------------------------------------
