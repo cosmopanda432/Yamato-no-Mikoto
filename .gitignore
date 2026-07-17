@@ -52,6 +52,8 @@ analysis/
 *.json
 # baselines/ 配下の judge JSON は手元参照用に温存するためトラッキング対象
 !baselines/*.json
+# ts_tools/ の package.json / package-lock.json は npm ci に必須のためトラッキング対象
+!ts_tools/*.json
 
 .superpowers
 *.gz

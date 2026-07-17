@@ -1,0 +1,8 @@
+{
+  "name": "ts4-tools",
+  "private": true,
+  "description": "src_min_ts4 (TypeScript target) の評価パイプラインが使う tsc/typescript ツールチェーン。npm ci でローカル/pod 双方に typescript を導入する。",
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}
