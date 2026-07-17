@@ -54,3 +54,4 @@ analysis/
 !baselines/*.json
 
 .superpowers
+*.gz
